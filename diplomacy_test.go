@@ -21,7 +21,7 @@ type MyApplicationSuite struct {
 }
 
 func (s *MyApplicationSuite) SetupTest() {
-	app := new(MyApplication)
+	app := NewGameApplication
 	s.tester = rollmelette.NewTester(app)
 }
 
