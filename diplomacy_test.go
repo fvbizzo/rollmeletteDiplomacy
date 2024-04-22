@@ -9,7 +9,8 @@ import (
 )
 
 var payload = common.Hex2Bytes("deadbeef")
-var msgSender = common.HexToAddress("0xfafafafafafafafafafafafafafafafafafafafa")
+
+// var msgSender = common.HexToAddress("0xfafafafafafafafafafafafafafafafafafafafa")
 var Austria = common.HexToAddress("0xfafafafafafafafafafafafafafafafafafafaf1")
 var Player1 = common.HexToAddress("0xfafafafafafafafafafafafafafafafafafafaf2")
 var Player2 = common.HexToAddress("0xfafafafafafafafafafafafafafafafafafafaf3")

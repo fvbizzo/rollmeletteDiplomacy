@@ -242,38 +242,41 @@ func (a *GameApplication) handleMoveArmy(
 	return nil
 }
 
+/*
 func (a *GameApplication) resolveConflict(
+
 	rollmelette.Metadata,
-) error {
-	// Map to store the strength of each player's units in the conflict
-	strength := make(map[string]int)
 
-	// Count the strength of each player's units in the conflict
-	for _, unit := range a.state.OrderStack {
-		strength[unit.OrderOwner]++
-	}
+	) error {
+		// Map to store the strength of each player's units in the conflict
+		strength := make(map[string]int)
 
-	// Find the player with the highest strength
-	maxStrength := 0
-	var winner string
-	for player, s := range strength {
-		if s > maxStrength {
-			maxStrength = s
-			winner = player
+		// Count the strength of each player's units in the conflict
+		for _, unit := range a.state.OrderStack {
+			strength[unit.OrderOwner]++
 		}
-	}
 
-	// Remove units of losing players from the territory
-	for _, unit := range a.state.OrderStack {
-		if unit.OrderOwner != winner {
-			unit.ToRegion.Name = "" // Clear the occupant of the territory
-			// You might want to remove the defeated unit from the player's controlled units list
+		// Find the player with the highest strength
+		maxStrength := 0
+		var winner string
+		for player, s := range strength {
+			if s > maxStrength {
+				maxStrength = s
+				winner = player
+			}
 		}
+
+		// Remove units of losing players from the territory
+		for _, unit := range a.state.OrderStack {
+			if unit.OrderOwner != winner {
+				unit.ToRegion.Name = "" // Clear the occupant of the territory
+				// You might want to remove the defeated unit from the player's controlled units list
+			}
+		}
+
+		return nil
 	}
-
-	return nil
-}
-
+*/
 func (a *GameApplication) passTurn() error {
 	if a.state.Turn == "move" {
 		a.state.Turn = "build"
