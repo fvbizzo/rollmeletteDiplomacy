@@ -169,7 +169,10 @@ func (a *GameApplication) Advance(
 			return fmt.Errorf("failed to marshal: %w", err)
 		}
 
-		a.Inspect(env, bytes)
+		err = a.Inspect(env, bytes)
+		if err != nil {
+			return fmt.Errorf("failed to Inspect: %w", err)
+		}
 	case BuildArmy:
 		var inputPayload BuildArmyPayload
 		err = json.Unmarshal(input.Payload, &inputPayload)
@@ -195,7 +198,10 @@ func (a *GameApplication) Advance(
 			return fmt.Errorf("failed to marshal: %w", err)
 		}
 
-		a.Inspect(env, bytes)
+		err = a.Inspect(env, bytes)
+		if err != nil {
+			return fmt.Errorf("failed to Inspect: %w", err)
+		}
 
 	default:
 		return fmt.Errorf("invalid input kind: %v", input.Kind)
@@ -498,7 +504,7 @@ func UpdateGameState(outcome ConflictOutcome, a *GameState) {
 	}
 }
 
-func ResetOrders(a *GameApplication) error {
+func ResetOrders(a *GameApplication) {
 	for _, unit := range a.state.Units {
 		unit.CurrentOrder.Ordertype = "hold"
 		unit.CurrentOrder.FromRegion.Name = ""
@@ -506,7 +512,6 @@ func ResetOrders(a *GameApplication) error {
 		unit.CurrentOrder.ToRegion.Name = ""
 
 	}
-	return nil
 }
 
 func (a *GameApplication) passTurn() error {
