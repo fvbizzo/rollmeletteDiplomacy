@@ -22,9 +22,10 @@ func initializePlayers(
 		Armies: map[int]string{
 			1: "Vienna",
 			2: "Budapest",
-			3: "Triest",
+			3: "Trieste",
 		},
 		Bases: 3,
+		Ready: false,
 	}
 
 	England := Team{
@@ -36,6 +37,7 @@ func initializePlayers(
 			6: "Edinburgh",
 		},
 		Bases: 3,
+		Ready: false,
 	}
 	France := Team{
 		Name:   "France",
@@ -46,6 +48,7 @@ func initializePlayers(
 			9: "Marseilles",
 		},
 		Bases: 3,
+		Ready: false,
 	}
 	Germany := Team{
 		Name:   "Germany",
@@ -56,6 +59,7 @@ func initializePlayers(
 			12: "Kiel",
 		},
 		Bases: 3,
+		Ready: false,
 	}
 	Italy := Team{
 		Name:   "Italy",
@@ -66,6 +70,7 @@ func initializePlayers(
 			15: "Naples",
 		},
 		Bases: 3,
+		Ready: false,
 	}
 	Russia := Team{
 		Name:   "Russia",
@@ -77,6 +82,7 @@ func initializePlayers(
 			19: "Sevastopol",
 		},
 		Bases: 4,
+		Ready: false,
 	}
 	Turkey := Team{
 		Name:   "Turkey",
@@ -87,6 +93,7 @@ func initializePlayers(
 			22: "Ankara",
 		},
 		Bases: 3,
+		Ready: false,
 	}
 
 	Players[Au] = &Austria
@@ -335,28 +342,28 @@ func initializeRegions() map[string]*Region {
 func initializeUnits() map[int]*Unit {
 	Units := map[int]*Unit{
 
-		1:  {ID: 1, Type: "army", Position: "Vienna", Owner: "Austria", CurrentOrder: Orders{UnitID: 1, Ordertype: "hold"}, Retreating: false},
-		2:  {ID: 2, Type: "army", Position: "Budapest", Owner: "Austria", CurrentOrder: Orders{UnitID: 2, Ordertype: "hold"}, Retreating: false},
-		3:  {ID: 3, Type: "navy", Position: "Triest", Owner: "Austria", CurrentOrder: Orders{UnitID: 3, Ordertype: "hold"}, Retreating: false},
-		4:  {ID: 4, Type: "navy", Position: "London", Owner: "England", CurrentOrder: Orders{UnitID: 4, Ordertype: "hold"}, Retreating: false},
-		5:  {ID: 5, Type: "army", Position: "Liverpool", Owner: "England", CurrentOrder: Orders{UnitID: 5, Ordertype: "hold"}, Retreating: false},
-		6:  {ID: 6, Type: "navy", Position: "Edinburgh", Owner: "England", CurrentOrder: Orders{UnitID: 6, Ordertype: "hold"}, Retreating: false},
-		7:  {ID: 7, Type: "army", Position: "Paris", Owner: "France", CurrentOrder: Orders{UnitID: 7, Ordertype: "hold"}, Retreating: false},
-		8:  {ID: 8, Type: "navy", Position: "Brest", Owner: "France", CurrentOrder: Orders{UnitID: 8, Ordertype: "hold"}, Retreating: false},
-		9:  {ID: 9, Type: "army", Position: "Marseilles", Owner: "France", CurrentOrder: Orders{UnitID: 9, Ordertype: "hold"}, Retreating: false},
-		10: {ID: 10, Type: "army", Position: "Berlin", Owner: "Germany", CurrentOrder: Orders{UnitID: 10, Ordertype: "hold"}, Retreating: false},
-		11: {ID: 11, Type: "army", Position: "Munich", Owner: "Germany", CurrentOrder: Orders{UnitID: 11, Ordertype: "hold"}, Retreating: false},
-		12: {ID: 12, Type: "navy", Position: "Kiel", Owner: "Germany", CurrentOrder: Orders{UnitID: 12, Ordertype: "hold"}, Retreating: false},
-		13: {ID: 13, Type: "army", Position: "Rome", Owner: "Italy", CurrentOrder: Orders{UnitID: 13, Ordertype: "hold"}, Retreating: false},
-		14: {ID: 14, Type: "army", Position: "Venice", Owner: "Italy", CurrentOrder: Orders{UnitID: 14, Ordertype: "hold"}, Retreating: false},
-		15: {ID: 15, Type: "navy", Position: "Naples", Owner: "Italy", CurrentOrder: Orders{UnitID: 15, Ordertype: "hold"}, Retreating: false},
-		16: {ID: 16, Type: "Army", Position: "Moscow", Owner: "Russia", CurrentOrder: Orders{UnitID: 16, Ordertype: "hold"}, Retreating: false},
-		17: {ID: 17, Type: "navy", Position: "St Petersburg", Owner: "Russia", CurrentOrder: Orders{UnitID: 17, Ordertype: "hold"}, Retreating: false},
-		18: {ID: 18, Type: "army", Position: "Warsaw", Owner: "Russia", CurrentOrder: Orders{UnitID: 18, Ordertype: "hold"}, Retreating: false},
-		19: {ID: 19, Type: "navy", Position: "Sevastopol", Owner: "Russia", CurrentOrder: Orders{UnitID: 19, Ordertype: "hold"}, Retreating: false},
-		20: {ID: 20, Type: "army", Position: "Constantinople", Owner: "Turkey", CurrentOrder: Orders{UnitID: 20, Ordertype: "hold"}, Retreating: false},
-		21: {ID: 21, Type: "army", Position: "Smyrna", Owner: "Turkey", CurrentOrder: Orders{UnitID: 21, Ordertype: "hold"}, Retreating: false},
-		22: {ID: 22, Type: "navy", Position: "Ankara", Owner: "Turkey", CurrentOrder: Orders{UnitID: 22, Ordertype: "hold"}, Retreating: false},
+		1:  {ID: 1, Type: "army", Position: "Vienna", Owner: "Austria", CurrentOrder: Orders{UnitID: 1, Ordertype: "hold"}, Retreating: ""},
+		2:  {ID: 2, Type: "army", Position: "Budapest", Owner: "Austria", CurrentOrder: Orders{UnitID: 2, Ordertype: "hold"}, Retreating: ""},
+		3:  {ID: 3, Type: "navy", Position: "Trieste", Owner: "Austria", CurrentOrder: Orders{UnitID: 3, Ordertype: "hold"}, Retreating: ""},
+		4:  {ID: 4, Type: "navy", Position: "London", Owner: "England", CurrentOrder: Orders{UnitID: 4, Ordertype: "hold"}, Retreating: ""},
+		5:  {ID: 5, Type: "army", Position: "Liverpool", Owner: "England", CurrentOrder: Orders{UnitID: 5, Ordertype: "hold"}, Retreating: ""},
+		6:  {ID: 6, Type: "navy", Position: "Edinburgh", Owner: "England", CurrentOrder: Orders{UnitID: 6, Ordertype: "hold"}, Retreating: ""},
+		7:  {ID: 7, Type: "army", Position: "Paris", Owner: "France", CurrentOrder: Orders{UnitID: 7, Ordertype: "hold"}, Retreating: ""},
+		8:  {ID: 8, Type: "navy", Position: "Brest", Owner: "France", CurrentOrder: Orders{UnitID: 8, Ordertype: "hold"}, Retreating: ""},
+		9:  {ID: 9, Type: "army", Position: "Marseilles", Owner: "France", CurrentOrder: Orders{UnitID: 9, Ordertype: "hold"}, Retreating: ""},
+		10: {ID: 10, Type: "army", Position: "Berlin", Owner: "Germany", CurrentOrder: Orders{UnitID: 10, Ordertype: "hold"}, Retreating: ""},
+		11: {ID: 11, Type: "army", Position: "Munich", Owner: "Germany", CurrentOrder: Orders{UnitID: 11, Ordertype: "hold"}, Retreating: ""},
+		12: {ID: 12, Type: "navy", Position: "Kiel", Owner: "Germany", CurrentOrder: Orders{UnitID: 12, Ordertype: "hold"}, Retreating: ""},
+		13: {ID: 13, Type: "army", Position: "Rome", Owner: "Italy", CurrentOrder: Orders{UnitID: 13, Ordertype: "hold"}, Retreating: ""},
+		14: {ID: 14, Type: "army", Position: "Venice", Owner: "Italy", CurrentOrder: Orders{UnitID: 14, Ordertype: "hold"}, Retreating: ""},
+		15: {ID: 15, Type: "navy", Position: "Naples", Owner: "Italy", CurrentOrder: Orders{UnitID: 15, Ordertype: "hold"}, Retreating: ""},
+		16: {ID: 16, Type: "Army", Position: "Moscow", Owner: "Russia", CurrentOrder: Orders{UnitID: 16, Ordertype: "hold"}, Retreating: ""},
+		17: {ID: 17, Type: "navy", Position: "St Petersburg", Owner: "Russia", CurrentOrder: Orders{UnitID: 17, Ordertype: "hold"}, Retreating: ""},
+		18: {ID: 18, Type: "army", Position: "Warsaw", Owner: "Russia", CurrentOrder: Orders{UnitID: 18, Ordertype: "hold"}, Retreating: ""},
+		19: {ID: 19, Type: "navy", Position: "Sevastopol", Owner: "Russia", CurrentOrder: Orders{UnitID: 19, Ordertype: "hold"}, Retreating: ""},
+		20: {ID: 20, Type: "army", Position: "Constantinople", Owner: "Turkey", CurrentOrder: Orders{UnitID: 20, Ordertype: "hold"}, Retreating: ""},
+		21: {ID: 21, Type: "army", Position: "Smyrna", Owner: "Turkey", CurrentOrder: Orders{UnitID: 21, Ordertype: "hold"}, Retreating: ""},
+		22: {ID: 22, Type: "navy", Position: "Ankara", Owner: "Turkey", CurrentOrder: Orders{UnitID: 22, Ordertype: "hold"}, Retreating: ""},
 	}
 	return Units
 }

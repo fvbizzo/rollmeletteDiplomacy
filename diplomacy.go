@@ -40,21 +40,28 @@ type Movement struct {
 
 // The Team includes the team name, the Player address and a map of all the current armies this player has
 type Team struct {
-	Name   string         `json:"name"`
-	Player common.Address `json:"player"`
-	Armies map[int]string `json:"armies"`
-	Bases  int            `json:"bases"`
+	Name   string            `json:"name"`
+	Player common.Address    `json:"player"`
+	Armies map[int]string    `json:"armies"`
+	Bases  int               `json:"bases"`
+	Ready  bool              `json:"ready"`
+	Builds []*BuildArmyInput `json:"builds"`
+}
+
+type BuildArmyInput struct {
+	Info   BuildArmyPayload `json:"info"`
+	Player common.Address   `json:"player"`
 }
 
 type InputKind string
 
 // Input kinds accepted
 const (
-	MoveArmy   InputKind = "MoveArmy"
-	BuildArmy  InputKind = "BuildArmy"
-	PassTurn   InputKind = "PassTurn"
-	DeleteArmy InputKind = "DeleteArmy"
-	Retreat    InputKind = "Retreat"
+	MoveArmy    InputKind = "MoveArmy"
+	BuildArmy   InputKind = "BuildArmy"
+	ReadyOrders InputKind = "ReadyOrders"
+	DeleteArmy  InputKind = "DeleteArmy"
+	Retreat     InputKind = "Retreat"
 )
 
 type Input struct {
@@ -75,7 +82,7 @@ type Unit struct {
 	Position     string `json:"position"`
 	Owner        string `json:"owner"`
 	CurrentOrder Orders `json:"currentOrder"`
-	Retreating   bool   `json:"retreating"`
+	Retreating   string `json:"retreating"`
 }
 
 var UnitID int = 0
@@ -96,11 +103,15 @@ type Orders struct {
 	UnitID     int    `json:"unitID"`
 	Ordertype  string `json:"orderType"`
 	OrderOwner string `json:"orderOwner"`
-	ToRegion   Region `json:"toRegion"`
-	FromRegion Region `json:"fromRegion"`
+	ToRegion   string `json:"toRegion"`
+	FromRegion string `json:"fromRegion"`
 }
 
-type RetreatArmyPayload = GiveOrderPayload
+type RetreatOrderPayload struct {
+	UnitID   int    `json:"unitID"`
+	Delete   bool   `json:"delete"`
+	ToRegion string `json:"toRegion"`
+}
 
 type PassTurnPayload string
 
@@ -164,15 +175,6 @@ func (a *GameApplication) Advance(
 		if err != nil {
 			return err
 		}
-		bytes, err := json.Marshal(a.state.Units)
-		if err != nil {
-			return fmt.Errorf("failed to marshal: %w", err)
-		}
-
-		err = a.Inspect(env, bytes)
-		if err != nil {
-			return fmt.Errorf("failed to Inspect: %w", err)
-		}
 	case BuildArmy:
 		var inputPayload BuildArmyPayload
 		err = json.Unmarshal(input.Payload, &inputPayload)
@@ -183,40 +185,41 @@ func (a *GameApplication) Advance(
 		if err != nil {
 			return err
 		}
-	case PassTurn:
+	case ReadyOrders:
 		var inputPayload PassTurnPayload
 		err = json.Unmarshal(input.Payload, &inputPayload)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal payload: %w", err)
 		}
-		err = a.passTurn()
+		err = a.ReadyOrders(metadata)
 		if err != nil {
 			return err
 		}
-		bytes, err := json.Marshal(a.state.Units)
+	case Retreat:
+		var inputPayload RetreatOrderPayload
+		err = json.Unmarshal(input.Payload, &inputPayload)
 		if err != nil {
-			return fmt.Errorf("failed to marshal: %w", err)
+			return fmt.Errorf("failed to unmarshal payload: %w", err)
 		}
-
-		err = a.Inspect(env, bytes)
+		err = a.Retreat(metadata, inputPayload)
 		if err != nil {
-			return fmt.Errorf("failed to Inspect: %w", err)
+			return err
 		}
-
 	default:
 		return fmt.Errorf("invalid input kind: %v", input.Kind)
 	}
+
 	return a.Inspect(env, nil)
 }
 
 func (a *GameApplication) Inspect(env rollmelette.EnvInspector, payload []byte) error {
 
-	env.Report(payload)
+	bytes, err := json.Marshal(a.state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal: %w", err)
+	}
+	env.Report(bytes)
 	return nil
-}
-
-func (a *GameApplication) InspectPosition(u int) string {
-	return a.state.Units[u].Position
 }
 
 func (a *GameApplication) handleBuildArmy(
@@ -244,245 +247,265 @@ func (a *GameApplication) handleBuildArmy(
 	if a.state.Players[metadata.MsgSender].Name != inputPayload.Owner {
 		return fmt.Errorf("cant build another player's army")
 	}
+	if len(a.state.Players[metadata.MsgSender].Armies) >= a.state.Players[metadata.MsgSender].Bases && inputPayload.Delete == 0 {
+		return fmt.Errorf(("cant build another army without extra supply centers"))
+	}
 
-	if inputPayload.Delete != 0 {
-		a.state.Board[inputPayload.Position].Occupied = false
-		delete(a.state.Players[metadata.MsgSender].Armies, inputPayload.Delete)
-	} else {
-		a.state.Board[inputPayload.Position].Occupied = true
-		a.state.Players[metadata.MsgSender].Armies[UnitID] = inputPayload.Position
-		a.state.Units[UnitID] = &Unit{
-			ID:       UnitID,
-			Type:     inputPayload.Type,
-			Position: inputPayload.Position,
-			Owner:    inputPayload.Owner,
-			CurrentOrder: Orders{
-				UnitID:     UnitID,
-				Ordertype:  "hold",
-				OrderOwner: inputPayload.Owner,
-			},
+	build := BuildArmyInput{
+		Info:   inputPayload,
+		Player: metadata.MsgSender,
+	}
+	a.state.Players[metadata.MsgSender].Builds = append(a.state.Players[metadata.MsgSender].Builds, &build)
+
+	return nil
+}
+
+func BuildUnits(a *GameApplication) {
+
+	for _, player := range a.state.Players {
+		if len(player.Builds) == 0 {
+			continue
 		}
-		UnitID += 1
+		for _, order := range player.Builds {
+			if order.Info.Delete != 0 {
+				a.state.Board[order.Info.Position].Occupied = false
+				delete(a.state.Players[order.Player].Armies, order.Info.Delete)
+				delete(a.state.Units, order.Info.Delete)
+			} else {
+				a.state.Board[order.Info.Position].Occupied = true
+				a.state.Players[order.Player].Armies[UnitID] = order.Info.Position
+				a.state.Units[UnitID] = &Unit{
+					ID:       UnitID,
+					Type:     order.Info.Type,
+					Position: order.Info.Position,
+					Owner:    order.Info.Owner,
+					CurrentOrder: Orders{
+						UnitID:     UnitID,
+						Ordertype:  "hold",
+						OrderOwner: "",
+					},
+				}
+
+				UnitID += 1
+			}
+		}
+		player.Builds = nil
+	}
+}
+
+func (a *GameApplication) Retreat(
+	metadata rollmelette.Metadata,
+	inputPayload RetreatOrderPayload,
+) error {
+
+	if a.state.Turn != "retreats" {
+		return fmt.Errorf("cant issue a retreat order outside retreating phase")
+	}
+	if a.state.Players[metadata.MsgSender].Name != a.state.Units[inputPayload.UnitID].Owner {
+		return fmt.Errorf("cant retreat another player's unit")
 	}
 
 	return nil
+}
+
+func handleRetreat(a *GameState) {
+
 }
 
 func (a *GameApplication) handleMoveArmy(
 	metadata rollmelette.Metadata,
 	inputPayload GiveOrderPayload,
 ) error {
-	moveSet := map[string]bool{
-		"move":         true,
-		"support move": true,
-		"support hold": true,
-		"convoy":       true,
-		"hold":         true,
-	}
 	if a.state.Turn != "move" {
-		return fmt.Errorf("cant move an army outside move phase")
+		return fmt.Errorf("can't move an army outside of movement phase")
 	}
-	if !a.state.Board[inputPayload.FromRegion.Name].Occupied {
-		return fmt.Errorf("cant order an army to move from an empty region")
+	if _, ok := a.state.Players[metadata.MsgSender].Armies[inputPayload.UnitID]; !ok {
+		return fmt.Errorf("can't move another player's army")
 	}
-	if a.state.Players[metadata.MsgSender].Name != a.state.Units[inputPayload.UnitID].Owner {
-		return fmt.Errorf("cant order an army that dont belong to you")
+	orders := Orders{
+		UnitID:     inputPayload.UnitID,
+		Ordertype:  inputPayload.Ordertype,
+		OrderOwner: inputPayload.OrderOwner,
+		ToRegion:   inputPayload.ToRegion,
+		FromRegion: inputPayload.FromRegion,
 	}
-	if !moveSet[inputPayload.Ordertype] {
-		return fmt.Errorf("invalid order")
-	}
+	a.state.Units[inputPayload.UnitID].CurrentOrder = orders
 
-	if inputPayload.Ordertype == "move" {
-		if a.state.Units[inputPayload.UnitID].Type == "army" && a.state.Board[inputPayload.ToRegion.Name].Sea {
-			return fmt.Errorf("cant send an army into the sea")
-		}
-
-		if a.state.Units[inputPayload.UnitID].Type == "navy" && !a.state.Board[inputPayload.ToRegion.Name].Sea && !a.state.Board[inputPayload.ToRegion.Name].Coastal {
-			return fmt.Errorf("cant send a ship inland")
-		}
-		if !isConnected(a.state.Board[inputPayload.FromRegion.Name], &inputPayload.ToRegion.Name) {
-			return fmt.Errorf("cant move to non adjacent territory")
-		}
-	}
-
-	if inputPayload.Ordertype == "support move" {
-		if !isConnected(a.state.Board[inputPayload.FromRegion.Name], &inputPayload.ToRegion.Name) ||
-			!isConnected(a.state.Board[inputPayload.FromRegion.Name], &a.state.Units[inputPayload.UnitID].Position) ||
-			!isConnected(a.state.Board[inputPayload.ToRegion.Name], &a.state.Units[inputPayload.UnitID].Position) {
-			return fmt.Errorf("cant support move to nor from non adjacent territories")
-		}
-	}
-
-	if inputPayload.Ordertype == "support hold" {
-		if !isConnected(a.state.Board[a.state.Units[inputPayload.UnitID].Position], &inputPayload.ToRegion.Name) {
-			return fmt.Errorf("cant support hold to non adjacent territory")
-		}
-	}
-
-	if inputPayload.Ordertype == "convoy" {
-		if a.state.Units[inputPayload.UnitID].Type != "navy" {
-			return fmt.Errorf("cant convoy if the unit is not a navy")
-		}
-		if !isConnected(a.state.Board[inputPayload.FromRegion.Name], &a.state.Units[inputPayload.UnitID].Position) ||
-			!isConnected(a.state.Board[inputPayload.ToRegion.Name], &a.state.Units[inputPayload.UnitID].Position) {
-			return fmt.Errorf("cant convoy from or to Regions that your sea tile does not touch")
-		}
-	}
-
-	a.state.Units[inputPayload.UnitID].CurrentOrder = inputPayload
 	return nil
 }
 
-func isConnected(From *Region, To *string) bool {
-	for _, city := range From.Neighbors {
-		c := city
-		if *c == *To {
-			fmt.Println("Match found:", *To)
-			return true
+func (a *GameApplication) ResolveMovementConflicts() {
+	supportMoveOrders := a.processSupportMoveOrders()
+	supportHoldOrders := a.processSupportHoldOrders()
+
+	moveOrders := make([]*Unit, 0)
+	for _, unit := range a.state.Units {
+		if unit.CurrentOrder.Ordertype == "move" {
+			moveOrders = append(moveOrders, unit)
 		}
 	}
-	return false
+
+	executedMoves := make(map[string]bool)
+	for len(moveOrders) > 0 {
+		remainingMoves := make([]*Unit, 0)
+		for _, unit := range moveOrders {
+			if executedMoves[unit.CurrentOrder.FromRegion] || executedMoves[unit.CurrentOrder.ToRegion] {
+				remainingMoves = append(remainingMoves, unit)
+				continue
+			}
+			a.executeMove(unit, supportMoveOrders, supportHoldOrders)
+			executedMoves[unit.CurrentOrder.FromRegion] = true
+			executedMoves[unit.CurrentOrder.ToRegion] = true
+		}
+		if len(remainingMoves) == len(moveOrders) {
+			break
+		}
+		moveOrders = remainingMoves
+	}
+
+	for _, unit := range moveOrders {
+		a.executeMove(unit, supportMoveOrders, supportHoldOrders)
+	}
 }
 
-func ResolveMovementConflicts(gameState *GameState) {
-	for _, unit := range gameState.Units {
-		// Skip units with hold orders
-		if unit.CurrentOrder.Ordertype == "hold" {
-			continue
-		}
+func (a *GameApplication) executeMove(unit *Unit, supportMoveOrders, supportHoldOrders map[string]int) {
+	targetRegion := unit.CurrentOrder.ToRegion
+	attackers := []*Unit{unit}
 
-		// Check if the target region is occupied
-		targetRegion := gameState.Board[unit.CurrentOrder.ToRegion.Name]
-
-		switch {
-		case unit.CurrentOrder.Ordertype == "move" && !targetRegion.Occupied:
-			// An army moving to an unoccupied territory alone
-			outcome := ResolveMoveToUnoccupied(unit, gameState)
-			UpdateGameState(outcome, gameState)
-
-		case unit.CurrentOrder.Ordertype == "move" && targetRegion.Occupied:
-			// An army trying to move to an occupied territory
-			outcome := ResolveMoveToOccupied(unit, gameState)
-			UpdateGameState(outcome, gameState)
-
-		default:
-			// Do nothing for other cases
+	// Check for other units attempting to move to the same region
+	for _, otherUnit := range a.state.Units {
+		if otherUnit.CurrentOrder.Ordertype == "move" && otherUnit.CurrentOrder.ToRegion == targetRegion && otherUnit.ID != unit.ID {
+			// If two units attempt to move to the same region, both bounce
+			unit.Position = unit.CurrentOrder.FromRegion
+			a.state.Board[unit.CurrentOrder.FromRegion].Occupied = true
+			return
 		}
 	}
 
-}
-
-func ResolveMoveToUnoccupied(unit *Unit, gameState *GameState) ConflictOutcome {
-	for _, otherUnit := range gameState.Units {
-		if unit.ID != otherUnit.ID && otherUnit.CurrentOrder.ToRegion.Name == unit.CurrentOrder.ToRegion.Name {
-			// Two different armies trying to move to the same unoccupied territory
-			return ResolveConflict(unit, otherUnit, gameState)
-		}
-	}
-	// An army moving to an unoccupied territory alone
-	return ConflictOutcome{Winner: unit}
-}
-
-func ResolveMoveToOccupied(unit *Unit, gameState *GameState) ConflictOutcome {
-	var conflictingUnits []*Unit
-
-	for _, otherUnit := range gameState.Units {
-		if unit.ID != otherUnit.ID && otherUnit.CurrentOrder.ToRegion.Name == unit.CurrentOrder.ToRegion.Name {
-			// More than one army trying to move to an occupied territory
-			conflictingUnits = append(conflictingUnits, otherUnit)
-		}
-	}
-
-	if len(conflictingUnits) == 0 {
-		// An army trying to move to an occupied territory
-		return ResolveConflictWithOccupied(unit, gameState)
-	}
-
-	// Resolve conflicts with units moving to an occupied territory
-	outcomes := make([]ConflictOutcome, 0, len(conflictingUnits)+1)
-	outcomes = append(outcomes, ResolveConflictWithOccupied(unit, gameState))
-	for _, otherUnit := range conflictingUnits {
-		outcomes = append(outcomes, ResolveConflict(unit, otherUnit, gameState))
-	}
-
-	// Find the winner among all conflicts
-	winner := findWinnerAmongConflicts(outcomes)
-
-	return winner
-}
-
-func ResolveConflictWithOccupied(unit *Unit, gameState *GameState) ConflictOutcome {
-	for _, otherUnit := range gameState.Units {
-		if unit.ID != otherUnit.ID && otherUnit.CurrentOrder.ToRegion.Name == unit.CurrentOrder.ToRegion.Name {
-			// Determine the outcome of the conflict
-			return ResolveConflict(unit, otherUnit, gameState)
-		}
-	}
-	// No conflict, the unit failed to move in a 1v1
-	return ConflictOutcome{Bounced: true}
-}
-
-func findWinnerAmongConflicts(outcomes []ConflictOutcome) ConflictOutcome {
-	var winner ConflictOutcome
-	for _, outcome := range outcomes {
-		if outcome.Winner != nil {
-			if winner.Winner == nil || outcome.Winner.ID < winner.Winner.ID {
-				winner = outcome
+	// Handle normal movement logic
+	if len(attackers) == 1 && !a.state.Board[targetRegion].Occupied {
+		unit.Position = targetRegion
+		a.state.Board[targetRegion].Occupied = true
+		a.state.Board[unit.CurrentOrder.FromRegion].Occupied = false
+	} else {
+		outcome := a.ResolveMoveToOccupied(attackers, supportMoveOrders, supportHoldOrders, targetRegion)
+		if outcome.Bounced {
+			for _, attacker := range attackers {
+				attacker.Position = attacker.CurrentOrder.FromRegion
+			}
+		} else {
+			outcome.Winner.Position = targetRegion
+			a.state.Board[targetRegion].Occupied = true
+			a.state.Board[outcome.Winner.CurrentOrder.FromRegion].Occupied = false
+			if outcome.Loser != nil {
+				outcome.Loser.Retreating = outcome.Loser.Position
+				a.state.Board[outcome.Loser.Position].Occupied = false
 			}
 		}
 	}
-	return winner
 }
 
-// ResolveConflict resolves conflicts between two units' orders
-func ResolveConflict(unit1, unit2 *Unit, gameState *GameState) ConflictOutcome {
-	// Determine the strength of each unit based on their orders and support
-	strength1 := DetermineStrength(unit1, gameState)
-	strength2 := DetermineStrength(unit2, gameState)
+func (a *GameApplication) ResolveMoveToOccupied(attackers []*Unit, supportMoveOrders, supportHoldOrders map[string]int, targetRegion string) ConflictOutcome {
+	defenderUnit := a.getUnitAtPosition(targetRegion)
+	if defenderUnit != nil {
+		attackers = append(attackers, defenderUnit)
+	}
 
-	// Determine the outcome of the conflict based on strengths
-	if strength1 > strength2 {
-		return ConflictOutcome{Winner: unit1, Loser: unit2}
-	} else if strength1 < strength2 {
-		return ConflictOutcome{Winner: unit2, Loser: unit1}
-	} else {
-		// If strengths are equal, units bounce back to their original positions
+	strongest := attackers[0]
+	for _, attacker := range attackers[1:] {
+		strongest = a.ResolveConflict(strongest, attacker, supportMoveOrders, supportHoldOrders, targetRegion)
+	}
+
+	if defenderUnit != nil && strongest == defenderUnit {
 		return ConflictOutcome{Bounced: true}
 	}
-}
 
-// DetermineStrength determines the strength of a unit based on its order and support
-func DetermineStrength(unit *Unit, gameState *GameState) int {
-	strength := 1
-
-	// Check the type of order the unit has
-	switch unit.CurrentOrder.Ordertype {
-	case "move", "hold":
-		// For move or hold orders, the strength is simply 1
-		// No additional logic needed
-	case "support move", "support hold":
-		// For support orders, check if there are other units supporting this unit
-		supportingUnits := findSupportingUnits(unit, gameState)
-		strength += supportingUnits
-	case "convoy":
-		// For convoy orders, the fleet does not add to strength
+	var loser *Unit
+	for _, attacker := range attackers {
+		if attacker != strongest {
+			loser = attacker
+			break
+		}
 	}
 
-	return strength
+	return ConflictOutcome{
+		Winner: strongest,
+		Loser:  loser,
+	}
 }
 
-func findSupportingUnits(unit *Unit, gameState *GameState) int {
-	support := 0
-	for _, sup := range gameState.Units {
-		if sup.CurrentOrder.Ordertype == "support move" && sup.CurrentOrder.FromRegion.Name == unit.CurrentOrder.FromRegion.Name && sup.CurrentOrder.ToRegion.Name == unit.CurrentOrder.ToRegion.Name {
-			support += 1
-		}
-		if sup.CurrentOrder.Ordertype == "support hold" && sup.CurrentOrder.FromRegion.Name == unit.Position {
-			support += 1
-		}
+func (a *GameApplication) ResolveConflict(unit1, unit2 *Unit, supportMoveOrders, supportHoldOrders map[string]int, targetRegion string) *Unit {
+	unit1Strength := 1 + supportMoveOrders[unit1.CurrentOrder.FromRegion]
+	unit2Strength := 1 + supportMoveOrders[unit2.CurrentOrder.FromRegion]
 
+	if unit1.Position == targetRegion {
+		unit1Strength += supportHoldOrders[targetRegion]
 	}
-	return support
+	if unit2.Position == targetRegion {
+		unit2Strength += supportHoldOrders[targetRegion]
+	}
+
+	if unit1Strength > unit2Strength {
+		return unit1
+	}
+	if unit2Strength > unit1Strength {
+		return unit2
+	}
+
+	if unit1.Position == targetRegion {
+		return unit1
+	}
+	if unit2.Position == targetRegion {
+		return unit2
+	}
+
+	return nil
+}
+
+func (a *GameApplication) getUnitAtPosition(position string) *Unit {
+	for _, unit := range a.state.Units {
+		if unit.Position == position {
+			return unit
+		}
+	}
+	return nil
+}
+
+func (a *GameApplication) processSupportMoveOrders() map[string]int {
+	supportOrders := make(map[string]int)
+
+	for _, unit := range a.state.Units {
+		if unit.CurrentOrder.Ordertype == "support move" {
+			fromRegion := unit.CurrentOrder.FromRegion
+			supportOrders[fromRegion]++
+		}
+	}
+
+	return supportOrders
+}
+
+func (a *GameApplication) processSupportHoldOrders() map[string]int {
+	supportOrders := make(map[string]int)
+
+	for _, unit := range a.state.Units {
+		if unit.CurrentOrder.Ordertype == "support hold" {
+			toRegion := unit.CurrentOrder.ToRegion
+			supportOrders[toRegion]++
+		}
+	}
+
+	return supportOrders
+}
+
+func (a *GameApplication) ExecuteOrders() {
+	supportMoveOrders := a.processSupportMoveOrders()
+	supportHoldOrders := a.processSupportHoldOrders()
+
+	for _, unit := range a.state.Units {
+		if unit.CurrentOrder.Ordertype == "move" {
+			a.executeMove(unit, supportMoveOrders, supportHoldOrders)
+		}
+	}
 }
 
 // UpdateGameState updates the game state based on the outcome of a conflict
@@ -492,13 +515,15 @@ func UpdateGameState(outcome ConflictOutcome, a *GameState) {
 	}
 
 	if outcome.Winner != nil && outcome.Loser != nil {
-		a.Units[outcome.Winner.ID].Position = outcome.Winner.CurrentOrder.ToRegion.Name
+		a.Units[outcome.Winner.ID].Position = outcome.Winner.CurrentOrder.ToRegion
 		a.Board[outcome.Winner.Position].Occupied = true
 		a.Board[outcome.Winner.Position].Owner = outcome.Winner.Owner
 
-		a.Units[outcome.Loser.ID].Retreating = true
+		if a.Units[outcome.Loser.ID].Position == a.Units[outcome.Winner.ID].CurrentOrder.ToRegion {
+			a.Units[outcome.Loser.ID].Retreating = a.Units[outcome.Winner.ID].Position
+		}
 	} else {
-		a.Units[outcome.Winner.ID].Position = outcome.Winner.CurrentOrder.ToRegion.Name
+		a.Units[outcome.Winner.ID].Position = outcome.Winner.CurrentOrder.ToRegion
 		a.Board[outcome.Winner.Position].Occupied = true
 		a.Board[outcome.Winner.Position].Owner = outcome.Winner.Owner
 	}
@@ -507,16 +532,36 @@ func UpdateGameState(outcome ConflictOutcome, a *GameState) {
 func ResetOrders(a *GameApplication) {
 	for _, unit := range a.state.Units {
 		unit.CurrentOrder.Ordertype = "hold"
-		unit.CurrentOrder.FromRegion.Name = ""
+		unit.CurrentOrder.FromRegion = ""
 		unit.CurrentOrder.OrderOwner = ""
-		unit.CurrentOrder.ToRegion.Name = ""
+		unit.CurrentOrder.ToRegion = ""
 
 	}
 }
 
+func (a *GameApplication) ReadyOrders(
+	metadata rollmelette.Metadata,
+) error {
+	if a.state.Players[metadata.MsgSender] == nil {
+		return fmt.Errorf("msg sender is not a player")
+	}
+
+	a.state.Players[metadata.MsgSender].Ready = true
+	for _, player := range a.state.Players {
+		if !player.Ready {
+			return nil
+		}
+	}
+	a.passTurn()
+	return nil
+}
+
 func (a *GameApplication) passTurn() error {
+	for _, player := range a.state.Players {
+		player.Ready = false
+	}
 	if a.state.Turn == "move" {
-		ResolveMovementConflicts(&a.state)
+		a.ResolveMovementConflicts()
 		ResetOrders(a)
 		if a.state.MoveCounter {
 			a.state.Turn = "build"
@@ -524,8 +569,21 @@ func (a *GameApplication) passTurn() error {
 		} else {
 			a.state.MoveCounter = true
 		}
-	} else {
+		for _, unit := range a.state.Units {
+			if unit.Retreating != "" {
+				a.state.Turn = "retreats"
+			}
+		}
+	} else if a.state.Turn == "build" {
+		BuildUnits(a)
 		a.state.Turn = "move"
+	} else if a.state.Turn == "retreats" {
+		handleRetreat(&a.state)
+		if a.state.MoveCounter {
+			a.state.Turn = "move"
+		} else {
+			a.state.Turn = "build"
+		}
 	}
 
 	return nil

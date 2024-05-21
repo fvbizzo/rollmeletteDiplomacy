@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -19,7 +20,9 @@ var Italy = common.HexToAddress("0xfafafafafafafafafafafafafafafafafafafaf5")
 var Russia = common.HexToAddress("0xfafafafafafafafafafafafafafafafafafafaf6")
 var Turkey = common.HexToAddress("0xfafafafafafafafafafafafafafafafafafafaf7")
 
-var PassTurnPayloadSetup = []byte(`{"kind": "PassTurn", "payload": ""}`)
+var PassTurnPayloadSetup = []byte(`{"kind": "ReadyOrders", "payload": ""}`)
+
+var currentState GameState
 
 func TestMyApplicationSuite(t *testing.T) {
 	suite.Run(t, new(MyApplicationSuite))
@@ -35,9 +38,43 @@ func (s *MyApplicationSuite) SetupTest() {
 	s.tester = rollmelette.NewTester(app)
 }
 
+func (s *MyApplicationSuite) PassTurn() ([]byte, error) {
+	result := s.tester.Advance(Austria, PassTurnPayloadSetup)
+	if result.Err != nil {
+		return result.Reports[0].Payload, result.Err
+	}
+	result = s.tester.Advance(England, PassTurnPayloadSetup)
+	if result.Err != nil {
+		return result.Reports[0].Payload, result.Err
+	}
+	result = s.tester.Advance(France, PassTurnPayloadSetup)
+	if result.Err != nil {
+		return result.Reports[0].Payload, result.Err
+	}
+	result = s.tester.Advance(Germany, PassTurnPayloadSetup)
+	if result.Err != nil {
+		return result.Reports[0].Payload, result.Err
+	}
+	result = s.tester.Advance(Italy, PassTurnPayloadSetup)
+	if result.Err != nil {
+		return result.Reports[0].Payload, result.Err
+	}
+	result = s.tester.Advance(Russia, PassTurnPayloadSetup)
+	if result.Err != nil {
+		return result.Reports[0].Payload, result.Err
+	}
+	result = s.tester.Advance(Turkey, PassTurnPayloadSetup)
+	if result.Err != nil {
+		return result.Reports[0].Payload, result.Err
+	}
+	return result.Reports[0].Payload, nil
+}
+
 func (s *MyApplicationSuite) TestDeleteArmy() {
-	s.tester.Advance(England, PassTurnPayloadSetup)
-	s.tester.Advance(England, PassTurnPayloadSetup)
+
+	s.PassTurn()
+	s.PassTurn()
+
 	input := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 4}}`
 	result := s.tester.Advance(England, []byte(input))
 	s.Nil(result.Err)
@@ -49,10 +86,16 @@ func (s *MyApplicationSuite) TestPassMoveTurn() {
 }
 
 func (s *MyApplicationSuite) TestDeleteArmyWhereThereIsNone() {
-	s.tester.Advance(England, PassTurnPayloadSetup)
-	s.tester.Advance(England, PassTurnPayloadSetup)
+
+	s.PassTurn()
+	s.PassTurn()
+
 	preinput := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 4}}`
 	s.tester.Advance(England, []byte(preinput))
+	s.PassTurn()
+	s.PassTurn()
+	s.PassTurn()
+
 	input := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 4}}`
 	result := s.tester.Advance(England, []byte(input))
 	s.ErrorContains(result.Err, "cant delete an army in empty region")
@@ -60,18 +103,54 @@ func (s *MyApplicationSuite) TestDeleteArmyWhereThereIsNone() {
 
 // Testing the build army function
 func (s *MyApplicationSuite) TestBuildArmy() {
-	s.tester.Advance(England, PassTurnPayloadSetup)
-	s.tester.Advance(England, PassTurnPayloadSetup)
+
+	s.PassTurn()
+	s.PassTurn()
+
 	preinput := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 4}}`
 	s.tester.Advance(England, []byte(preinput))
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	//check if the unit has been deleted
+	_, ok := currentState.Units[4]
+
+	s.Equal(false, ok)
+	s.Nil(result)
+
+	s.PassTurn()
+	s.PassTurn()
+
 	input := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 0}}`
-	result := s.tester.Advance(England, []byte(input))
-	s.Nil(result.Err)
+	r := s.tester.Advance(England, []byte(input))
+	s.Nil(r.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	expect := Unit{
+		ID:       23,
+		Type:     "army",
+		Position: "London",
+		Owner:    "England",
+		CurrentOrder: Orders{
+			UnitID:     23,
+			Ordertype:  "hold",
+			OrderOwner: "",
+			ToRegion:   "",
+			FromRegion: "",
+		},
+	}
+
+	s.Equal(&expect, currentState.Units[23])
+	s.Nil(result)
 }
 
 // Testing a player trying to build an army outside build phase
 func (s *MyApplicationSuite) TestBuildArmyOutsideBuildPhase() {
-	//s.tester.Advance(England, []byte(`{"kind": "PassTurn", "payload": ""}`))
 	input := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 0}}`
 	result := s.tester.Advance(England, []byte(input))
 	s.ErrorContains(result.Err, "cant build an army outside build")
@@ -80,45 +159,183 @@ func (s *MyApplicationSuite) TestBuildArmyOutsideBuildPhase() {
 
 // Trying to build another player Army
 func (s *MyApplicationSuite) TestBuildanotherPlayerArmy() {
-	s.tester.Advance(England, []byte(`{"kind": "PassTurn", "payload": ""}`))
-	s.tester.Advance(England, []byte(`{"kind": "PassTurn", "payload": ""}`))
+
+	s.PassTurn()
+	s.PassTurn()
+
 	preinput := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 4}}`
 	s.tester.Advance(England, []byte(preinput))
+
+	s.PassTurn()
+	s.PassTurn()
+	s.PassTurn()
+
 	input := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "France", "Delete": 0}}`
 	result := s.tester.Advance(England, []byte(input))
 	s.ErrorContains(result.Err, "cant build another player's army")
 }
 
 func (s *MyApplicationSuite) TestMoveArmy() {
-	input := `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "move", "OrderOwner": "England", "ToRegion": {"Name":"Wales"}, "FromRegion": {"Name": "London"}}}`
+	input := `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "move", "OrderOwner": "England", "ToRegion": "Wales", "FromRegion": "London"}}`
 	s.tester.Advance(England, []byte(input))
-	result := s.tester.Advance(England, PassTurnPayloadSetup)
-	s.Nil(result.Err)
-	expectedUnitsPosition := `{"1":{"ID":1,"type":"army","position":"Vienna","owner":"Austria","currentOrder":{"unitID":1,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"10":{"ID":10,"type":"army","position":"Berlin","owner":"Germany","currentOrder":{"unitID":10,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"11":{"ID":11,"type":"army","position":"Munich","owner":"Germany","currentOrder":{"unitID":11,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"12":{"ID":12,"type":"navy","position":"Kiel","owner":"Germany","currentOrder":{"unitID":12,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"13":{"ID":13,"type":"army","position":"Rome","owner":"Italy","currentOrder":{"unitID":13,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"14":{"ID":14,"type":"army","position":"Venice","owner":"Italy","currentOrder":{"unitID":14,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"15":{"ID":15,"type":"navy","position":"Naples","owner":"Italy","currentOrder":{"unitID":15,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"16":{"ID":16,"type":"Army","position":"Moscow","owner":"Russia","currentOrder":{"unitID":16,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"17":{"ID":17,"type":"navy","position":"St Petersburg","owner":"Russia","currentOrder":{"unitID":17,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"18":{"ID":18,"type":"army","position":"Warsaw","owner":"Russia","currentOrder":{"unitID":18,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"19":{"ID":19,"type":"navy","position":"Sevastopol","owner":"Russia","currentOrder":{"unitID":19,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"2":{"ID":2,"type":"army","position":"Budapest","owner":"Austria","currentOrder":{"unitID":2,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"20":{"ID":20,"type":"army","position":"Constantinople","owner":"Turkey","currentOrder":{"unitID":20,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"21":{"ID":21,"type":"army","position":"Smyrna","owner":"Turkey","currentOrder":{"unitID":21,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"22":{"ID":22,"type":"navy","position":"Ankara","owner":"Turkey","currentOrder":{"unitID":22,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"3":{"ID":3,"type":"navy","position":"Triest","owner":"Austria","currentOrder":{"unitID":3,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"4":{"ID":4,"type":"navy","position":"Wales","owner":"England","currentOrder":{"unitID":4,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"5":{"ID":5,"type":"army","position":"Liverpool","owner":"England","currentOrder":{"unitID":5,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"6":{"ID":6,"type":"navy","position":"Edinburgh","owner":"England","currentOrder":{"unitID":6,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"7":{"ID":7,"type":"army","position":"Paris","owner":"France","currentOrder":{"unitID":7,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"8":{"ID":8,"type":"navy","position":"Brest","owner":"France","currentOrder":{"unitID":8,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"9":{"ID":9,"type":"army","position":"Marseilles","owner":"France","currentOrder":{"unitID":9,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false}}`
-	s.Equal(expectedUnitsPosition, string(result.Reports[0].Payload))
+
+	report, result := s.PassTurn()
+	s.Nil(result)
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Wales", currentState.Units[4].Position)
 }
 
 func (s *MyApplicationSuite) TestUnitBounce() {
-	input := `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "move", "OrderOwner": "England", "ToRegion": {"Name":"Enlish Channel"}, "FromRegion": {"Name": "London"}}}`
-	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 8, "OrderType": "move", "OrderOwner": "France", "ToRegion": {"Name":"Enlish Channel"}, "FromRegion": {"Name": "Brest"}}}`
-	s.tester.Advance(England, []byte(input))
-	s.tester.Advance(France, []byte(input2))
-	result := s.tester.Advance(England, []byte(`{"kind": "PassTurn", "payload": ""}`))
-	s.Nil(result.Err)
-	expectedUnitsPosition := `{"1":{"ID":1,"type":"army","position":"Vienna","owner":"Austria","currentOrder":{"unitID":1,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"10":{"ID":10,"type":"army","position":"Berlin","owner":"Germany","currentOrder":{"unitID":10,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"11":{"ID":11,"type":"army","position":"Munich","owner":"Germany","currentOrder":{"unitID":11,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"12":{"ID":12,"type":"navy","position":"Kiel","owner":"Germany","currentOrder":{"unitID":12,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"13":{"ID":13,"type":"army","position":"Rome","owner":"Italy","currentOrder":{"unitID":13,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"14":{"ID":14,"type":"army","position":"Venice","owner":"Italy","currentOrder":{"unitID":14,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"15":{"ID":15,"type":"navy","position":"Naples","owner":"Italy","currentOrder":{"unitID":15,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"16":{"ID":16,"type":"Army","position":"Moscow","owner":"Russia","currentOrder":{"unitID":16,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"17":{"ID":17,"type":"navy","position":"St Petersburg","owner":"Russia","currentOrder":{"unitID":17,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"18":{"ID":18,"type":"army","position":"Warsaw","owner":"Russia","currentOrder":{"unitID":18,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"19":{"ID":19,"type":"navy","position":"Sevastopol","owner":"Russia","currentOrder":{"unitID":19,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"2":{"ID":2,"type":"army","position":"Budapest","owner":"Austria","currentOrder":{"unitID":2,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"20":{"ID":20,"type":"army","position":"Constantinople","owner":"Turkey","currentOrder":{"unitID":20,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"21":{"ID":21,"type":"army","position":"Smyrna","owner":"Turkey","currentOrder":{"unitID":21,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"22":{"ID":22,"type":"navy","position":"Ankara","owner":"Turkey","currentOrder":{"unitID":22,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"3":{"ID":3,"type":"navy","position":"Triest","owner":"Austria","currentOrder":{"unitID":3,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"4":{"ID":4,"type":"navy","position":"London","owner":"England","currentOrder":{"unitID":4,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"5":{"ID":5,"type":"army","position":"Liverpool","owner":"England","currentOrder":{"unitID":5,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"6":{"ID":6,"type":"navy","position":"Edinburgh","owner":"England","currentOrder":{"unitID":6,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"7":{"ID":7,"type":"army","position":"Paris","owner":"France","currentOrder":{"unitID":7,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"8":{"ID":8,"type":"navy","position":"Brest","owner":"France","currentOrder":{"unitID":8,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"9":{"ID":9,"type":"army","position":"Marseilles","owner":"France","currentOrder":{"unitID":9,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false}}`
-	s.Equal(expectedUnitsPosition, string(result.Reports[0].Payload))
+
+	input := `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "move", "OrderOwner": "England", "ToRegion": "English Channel", "FromRegion": "London"}}`
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 8, "OrderType": "move", "OrderOwner": "France", "ToRegion": "English Channel", "FromRegion": "Brest"}}`
+
+	r1 := s.tester.Advance(England, []byte(input))
+	r2 := s.tester.Advance(France, []byte(input2))
+
+	s.Nil(r1.Err)
+	s.Nil(r2.Err)
+
+	json.Unmarshal([]byte(r2.Reports[0].Payload), &currentState)
+
+	//checking if the orders were issued
+	expectedUnitsOrders1 := Orders{
+		UnitID:     4,
+		Ordertype:  "move",
+		OrderOwner: "England",
+		ToRegion:   "English Channel",
+		FromRegion: "London",
+	}
+
+	expectedUnitsOrders2 := Orders{
+		UnitID:     8,
+		Ordertype:  "move",
+		OrderOwner: "France",
+		ToRegion:   "English Channel",
+		FromRegion: "Brest",
+	}
+
+	s.Equal(expectedUnitsOrders1, currentState.Units[4].CurrentOrder)
+	s.Equal(expectedUnitsOrders2, currentState.Units[8].CurrentOrder)
+
+	report, result := s.PassTurn()
+
+	s.Nil(result)
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	//Both units should bounce and be at the place they started
+	s.Equal("London", currentState.Units[4].Position)
+	s.Equal("Brest", currentState.Units[8].Position)
 }
 
-func (s *MyApplicationSuite) TestSupportMoveSuccess() {
-	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": {"Name":"Tyrolia"}, "FromRegion": {"Name": "Vienna"}}}`
-	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 3, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": {"Name":"Venice"}, "FromRegion": {"Name": "Trieste"}}}`
+func (s *MyApplicationSuite) TestSupportMove() {
+	//Setting the first unit to tyrolia and trying to invade venice 1x1
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Tyrolia", "FromRegion": "Vienna"}}`
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 3, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Trieste"}}`
+
 	r1 := s.tester.Advance(Austria, []byte(input1))
 	s.Nil(r1.Err)
-	s.tester.Advance(Austria, []byte(input2))
-	result := s.tester.Advance(Austria, PassTurnPayloadSetup)
-	expectedUnitsPosition := `{"1":{"ID":1,"type":"army","position":"Tyrolia","owner":"Austria","currentOrder":{"unitID":1,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"10":{"ID":10,"type":"army","position":"Berlin","owner":"Germany","currentOrder":{"unitID":10,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"11":{"ID":11,"type":"army","position":"Munich","owner":"Germany","currentOrder":{"unitID":11,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"12":{"ID":12,"type":"navy","position":"Kiel","owner":"Germany","currentOrder":{"unitID":12,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"13":{"ID":13,"type":"army","position":"Rome","owner":"Italy","currentOrder":{"unitID":13,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"14":{"ID":14,"type":"army","position":"Venice","owner":"Italy","currentOrder":{"unitID":14,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"15":{"ID":15,"type":"navy","position":"Naples","owner":"Italy","currentOrder":{"unitID":15,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"16":{"ID":16,"type":"Army","position":"Moscow","owner":"Russia","currentOrder":{"unitID":16,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"17":{"ID":17,"type":"navy","position":"St Petersburg","owner":"Russia","currentOrder":{"unitID":17,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"18":{"ID":18,"type":"army","position":"Warsaw","owner":"Russia","currentOrder":{"unitID":18,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"19":{"ID":19,"type":"navy","position":"Sevastopol","owner":"Russia","currentOrder":{"unitID":19,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"2":{"ID":2,"type":"army","position":"Budapest","owner":"Austria","currentOrder":{"unitID":2,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"20":{"ID":20,"type":"army","position":"Constantinople","owner":"Turkey","currentOrder":{"unitID":20,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"21":{"ID":21,"type":"army","position":"Smyrna","owner":"Turkey","currentOrder":{"unitID":21,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"22":{"ID":22,"type":"navy","position":"Ankara","owner":"Turkey","currentOrder":{"unitID":22,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"3":{"ID":3,"type":"navy","position":"Triest","owner":"Austria","currentOrder":{"unitID":3,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"4":{"ID":4,"type":"navy","position":"London","owner":"England","currentOrder":{"unitID":4,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"5":{"ID":5,"type":"army","position":"Liverpool","owner":"England","currentOrder":{"unitID":5,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"6":{"ID":6,"type":"navy","position":"Edinburgh","owner":"England","currentOrder":{"unitID":6,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"7":{"ID":7,"type":"army","position":"Paris","owner":"France","currentOrder":{"unitID":7,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"8":{"ID":8,"type":"navy","position":"Brest","owner":"France","currentOrder":{"unitID":8,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false},"9":{"ID":9,"type":"army","position":"Marseilles","owner":"France","currentOrder":{"unitID":9,"orderType":"hold","orderOwner":"","toRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null},"fromRegion":{"name":"","occupied":false,"owner":"","supplyCenter":false,"coastal":false,"sea":false,"frontiers":null}},"retreating":false}}`
-	s.Equal(expectedUnitsPosition, string(result.Reports[0].Payload))
-	s.Nil(result.Err)
+	r2 := s.tester.Advance(Austria, []byte(input2))
+	s.Nil(r2.Err)
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Tyrolia", currentState.Units[1].Position)
+	s.Equal("Trieste", currentState.Units[3].Position)
+	s.Nil(result)
+
+	//invading Venice from Tyrolia and getting support from Trieste
+	input3 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Tyrolia"}}`
+	input4 := `{"kind": "MoveArmy", "payload" : {"UnitID": 3, "OrderType": "support move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Tyrolia"}}`
+
+	r3 := s.tester.Advance(Austria, []byte(input3))
+	s.Nil(r3.Err)
+	r4 := s.tester.Advance(Austria, []byte(input4))
+	s.Nil(r4.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Venice", currentState.Units[1].Position)
+	s.Equal("Venice", currentState.Units[14].Retreating)
+	s.Nil(result)
+
+}
+
+func (s *MyApplicationSuite) TestSupportHoldSuccess() {
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Tyrolia", "FromRegion": "Vienna"}}`
+
+	r1 := s.tester.Advance(Austria, []byte(input1))
+	s.Nil(r1.Err)
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Tyrolia", currentState.Units[1].Position)
+	s.Nil(result)
+
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Tyrolia"}}`
+	input3 := `{"kind": "MoveArmy", "payload" : {"UnitID": 13, "OrderType": "support hold", "OrderOwner": "Italy", "ToRegion": "Venice", "FromRegion": "Rome"}}`
+	input4 := `{"kind": "MoveArmy", "payload" : {"UnitID": 3, "OrderType": "support move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Tyrolia"}}`
+
+	r2 := s.tester.Advance(Austria, []byte(input2))
+	s.Nil(r2.Err)
+	r3 := s.tester.Advance(Italy, []byte(input3))
+	s.Nil(r3.Err)
+	r4 := s.tester.Advance(Austria, []byte(input4))
+	s.Nil(r4.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Tyrolia", currentState.Units[1].Position)
+	s.Equal("Trieste", currentState.Units[3].Position)
+	s.Equal("Rome", currentState.Units[13].Position)
+	s.Equal("Venice", currentState.Units[14].Position)
+	s.Equal("", currentState.Units[1].Retreating)
+	s.Equal("", currentState.Units[3].Retreating)
+	s.Equal("", currentState.Units[13].Retreating)
+	s.Equal("", currentState.Units[14].Retreating)
+	s.Nil(result)
+
+}
+
+func (s *MyApplicationSuite) TestMultipleSimultaniousAttacks() {
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Budapest", "FromRegion": "Vienna"}}`
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 2, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Serbia", "FromRegion": "Budapest"}}`
+	input3 := `{"kind": "MoveArmy", "payload" : {"UnitID": 16, "OrderType": "move", "OrderOwner": "Russia", "ToRegion": "Ukraine", "FromRegion": "Moscow"}}`
+	input4 := `{"kind": "MoveArmy", "payload" : {"UnitID": 18, "OrderType": "move", "OrderOwner": "Russia", "ToRegion": "Galicia", "FromRegion": "Warsaw"}}`
+	input5 := `{"kind": "MoveArmy", "payload" : {"UnitID": 20, "OrderType": "move", "OrderOwner": "Turkey", "ToRegion": "Bulgaria", "FromRegion": "Constantinople"}}`
+
+	r1 := s.tester.Advance(Austria, []byte(input1))
+	s.Nil(r1.Err)
+	r2 := s.tester.Advance(Austria, []byte(input2))
+	s.Nil(r2.Err)
+	r3 := s.tester.Advance(Russia, []byte(input3))
+	s.Nil(r3.Err)
+	r4 := s.tester.Advance(Russia, []byte(input4))
+	s.Nil(r4.Err)
+	r5 := s.tester.Advance(Turkey, []byte(input5))
+	s.Nil(r5.Err)
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Budapest", currentState.Units[1].Position)
+	s.Equal("Serbia", currentState.Units[2].Position)
+	s.Equal("Ukraine", currentState.Units[16].Position)
+	s.Equal("Galicia", currentState.Units[18].Position)
+	s.Equal("Bulgaria", currentState.Units[20].Position)
+	s.Nil(result)
 
 }
 
