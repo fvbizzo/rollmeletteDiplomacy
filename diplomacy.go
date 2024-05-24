@@ -38,6 +38,12 @@ type Movement struct {
 	Position string
 }
 
+type SupportOrder struct {
+	SupportingUnit *Unit
+	SupportedUnit  *Unit
+	TargetRegion   string
+}
+
 // The Team includes the team name, the Player address and a map of all the current armies this player has
 type Team struct {
 	Name   string            `json:"name"`
@@ -105,6 +111,12 @@ type Orders struct {
 	OrderOwner string `json:"orderOwner"`
 	ToRegion   string `json:"toRegion"`
 	FromRegion string `json:"fromRegion"`
+}
+
+type MoveOrder struct {
+	Unit       *Unit
+	FromRegion string
+	ToRegion   string
 }
 
 type RetreatOrderPayload struct {
@@ -334,178 +346,236 @@ func (a *GameApplication) handleMoveArmy(
 	return nil
 }
 
-func (a *GameApplication) ResolveMovementConflicts() {
-	supportMoveOrders := a.processSupportMoveOrders()
-	supportHoldOrders := a.processSupportHoldOrders()
-
-	moveOrders := make([]*Unit, 0)
+func (a *GameApplication) prepareMoves() []MoveOrder {
+	var moveOrders []MoveOrder
 	for _, unit := range a.state.Units {
 		if unit.CurrentOrder.Ordertype == "move" {
-			moveOrders = append(moveOrders, unit)
+			moveOrders = append(moveOrders, MoveOrder{
+				Unit:       unit,
+				FromRegion: unit.Position,
+				ToRegion:   unit.CurrentOrder.ToRegion,
+			})
 		}
 	}
+	return moveOrders
+}
 
-	executedMoves := make(map[string]bool)
-	for len(moveOrders) > 0 {
-		remainingMoves := make([]*Unit, 0)
-		for _, unit := range moveOrders {
-			if executedMoves[unit.CurrentOrder.FromRegion] || executedMoves[unit.CurrentOrder.ToRegion] {
-				remainingMoves = append(remainingMoves, unit)
-				continue
-			}
-			a.executeMove(unit, supportMoveOrders, supportHoldOrders)
-			executedMoves[unit.CurrentOrder.FromRegion] = true
-			executedMoves[unit.CurrentOrder.ToRegion] = true
+func calculateSupportCount(unit *Unit, gameState *GameState) int {
+	supportCount := 0
+	for _, supportingUnit := range gameState.Units {
+		if supportingUnit.CurrentOrder.Ordertype == "support move" &&
+			supportingUnit.CurrentOrder.ToRegion == unit.CurrentOrder.ToRegion &&
+			supportingUnit.CurrentOrder.FromRegion == unit.CurrentOrder.FromRegion {
+			supportCount++
+		} else if supportingUnit.CurrentOrder.Ordertype == "support hold" &&
+			supportingUnit.CurrentOrder.ToRegion == unit.Position {
+			supportCount++
 		}
-		if len(remainingMoves) == len(moveOrders) {
-			break
-		}
-		moveOrders = remainingMoves
+	}
+	return supportCount
+}
+
+func (a *GameApplication) executeMoves(moveOrders []MoveOrder) {
+	destinationMap := make(map[string][]*Unit)
+	for _, moveOrder := range moveOrders {
+		destinationMap[moveOrder.ToRegion] = append(destinationMap[moveOrder.ToRegion], moveOrder.Unit)
 	}
 
-	for _, unit := range moveOrders {
-		a.executeMove(unit, supportMoveOrders, supportHoldOrders)
+	for _, moveOrder := range moveOrders {
+		unitsMovingToDestination := destinationMap[moveOrder.ToRegion]
+		if len(unitsMovingToDestination) == 1 && !a.state.Board[moveOrder.ToRegion].Occupied {
+			// No conflict, move the unit
+			moveOrder.Unit.Position = moveOrder.ToRegion
+			a.state.Board[moveOrder.ToRegion].Occupied = true
+			a.state.Board[moveOrder.FromRegion].Occupied = false
+			a.state.Units[moveOrder.Unit.ID].Position = moveOrder.ToRegion
+		}
 	}
 }
 
-func (a *GameApplication) executeMove(unit *Unit, supportMoveOrders, supportHoldOrders map[string]int) {
-	targetRegion := unit.CurrentOrder.ToRegion
-	attackers := []*Unit{unit}
+func ResolveMovementConflicts(gameState *GameState) {
+	destinationMap := make(map[string][]*Unit)
 
-	// Check for other units attempting to move to the same region
-	for _, otherUnit := range a.state.Units {
-		if otherUnit.CurrentOrder.Ordertype == "move" && otherUnit.CurrentOrder.ToRegion == targetRegion && otherUnit.ID != unit.ID {
-			// If two units attempt to move to the same region, both bounce
-			unit.Position = unit.CurrentOrder.FromRegion
-			a.state.Board[unit.CurrentOrder.FromRegion].Occupied = true
-			return
+	for _, unit := range gameState.Units {
+		// Skip units with hold orders
+		if unit.CurrentOrder.Ordertype == "hold" {
+			continue
+		}
+		// Add units to the destination map
+		if unit.CurrentOrder.Ordertype == "move" {
+			destinationMap[unit.CurrentOrder.ToRegion] = append(destinationMap[unit.CurrentOrder.ToRegion], unit)
 		}
 	}
 
-	// Handle normal movement logic
-	if len(attackers) == 1 && !a.state.Board[targetRegion].Occupied {
-		unit.Position = targetRegion
-		a.state.Board[targetRegion].Occupied = true
-		a.state.Board[unit.CurrentOrder.FromRegion].Occupied = false
+	for targetRegion, units := range destinationMap {
+		if len(units) > 1 {
+			// Multiple units trying to move to the same region
+			targetRegionData := gameState.Board[targetRegion]
+			var outcome ConflictOutcome
+
+			if targetRegionData.Occupied {
+				occupyingUnit := gameState.getUnitAtPosition(targetRegion)
+				outcome = ResolveMoveToOccupied(units, occupyingUnit, gameState)
+			} else {
+				outcome = ResolveMoveToUnoccupied(units, gameState)
+			}
+
+			UpdateGameState(outcome, gameState)
+		} else if len(units) == 1 {
+			// Single unit trying to move to the region
+			unit := units[0]
+			if !gameState.Board[unit.CurrentOrder.ToRegion].Occupied {
+				outcome := ResolveMoveToUnoccupied([]*Unit{unit}, gameState)
+				UpdateGameState(outcome, gameState)
+			} else {
+				occupyingUnit := gameState.getUnitAtPosition(unit.CurrentOrder.ToRegion)
+				outcome := ResolveMoveToOccupied([]*Unit{unit}, occupyingUnit, gameState)
+				UpdateGameState(outcome, gameState)
+			}
+		}
+	}
+}
+
+func ResolveMoveToOccupied(movingUnits []*Unit, occupyingUnit *Unit, gameState *GameState) ConflictOutcome {
+	fmt.Println("Occupied: ", len(movingUnits), occupyingUnit.Position)
+	occupyingSupportCount := calculateSupportCount(occupyingUnit, gameState)
+	fmt.Println("sup hold: ", occupyingSupportCount)
+	var maxSupport int
+	var winningUnit *Unit
+	tie := false
+
+	for _, unit := range movingUnits {
+		supportCount := calculateSupportCount(unit, gameState)
+		if supportCount > maxSupport {
+			maxSupport = supportCount
+			winningUnit = unit
+			tie = false
+		} else if supportCount == maxSupport {
+			tie = true
+		}
+	}
+
+	if tie || maxSupport <= occupyingSupportCount {
+		// If there's a tie or the occupying unit has equal or more support, all moves fail
+		return ConflictOutcome{
+			Winner:  occupyingUnit,
+			Bounced: true,
+		}
 	} else {
-		outcome := a.ResolveMoveToOccupied(attackers, supportMoveOrders, supportHoldOrders, targetRegion)
-		if outcome.Bounced {
-			for _, attacker := range attackers {
-				attacker.Position = attacker.CurrentOrder.FromRegion
-			}
-		} else {
-			outcome.Winner.Position = targetRegion
-			a.state.Board[targetRegion].Occupied = true
-			a.state.Board[outcome.Winner.CurrentOrder.FromRegion].Occupied = false
-			if outcome.Loser != nil {
-				outcome.Loser.Retreating = outcome.Loser.Position
-				a.state.Board[outcome.Loser.Position].Occupied = false
-			}
+		// The unit with the highest support wins and moves
+		winningUnit.Position = winningUnit.CurrentOrder.ToRegion
+		gameState.Board[winningUnit.CurrentOrder.ToRegion].Occupied = true
+		gameState.Board[winningUnit.CurrentOrder.FromRegion].Occupied = false
+		occupyingUnit.Retreating = winningUnit.CurrentOrder.ToRegion
+
+		return ConflictOutcome{
+			Winner:  winningUnit,
+			Loser:   occupyingUnit,
+			Bounced: false,
 		}
 	}
 }
 
-func (a *GameApplication) ResolveMoveToOccupied(attackers []*Unit, supportMoveOrders, supportHoldOrders map[string]int, targetRegion string) ConflictOutcome {
-	defenderUnit := a.getUnitAtPosition(targetRegion)
-	if defenderUnit != nil {
-		attackers = append(attackers, defenderUnit)
-	}
+func ResolveMoveToUnoccupied(units []*Unit, gameState *GameState) ConflictOutcome {
+	var maxSupport int
+	var winningUnit *Unit
+	tie := false
 
-	strongest := attackers[0]
-	for _, attacker := range attackers[1:] {
-		strongest = a.ResolveConflict(strongest, attacker, supportMoveOrders, supportHoldOrders, targetRegion)
-	}
-
-	if defenderUnit != nil && strongest == defenderUnit {
-		return ConflictOutcome{Bounced: true}
-	}
-
-	var loser *Unit
-	for _, attacker := range attackers {
-		if attacker != strongest {
-			loser = attacker
-			break
+	for _, unit := range units {
+		supportCount := calculateSupportCount(unit, gameState)
+		if supportCount > maxSupport {
+			maxSupport = supportCount
+			winningUnit = unit
+			tie = false
+		} else if supportCount == maxSupport {
+			tie = true
 		}
 	}
 
-	return ConflictOutcome{
-		Winner: strongest,
-		Loser:  loser,
+	if tie {
+		// If there's a tie, all moves fail
+		for _, unit := range units {
+			gameState.Board[unit.CurrentOrder.ToRegion].Occupied = false
+		}
+		return ConflictOutcome{
+			Bounced: true,
+		}
+	} else {
+		// The unit with the highest support moves
+		winningUnit.Position = winningUnit.CurrentOrder.ToRegion
+		gameState.Board[winningUnit.CurrentOrder.ToRegion].Occupied = true
+		gameState.Board[winningUnit.CurrentOrder.FromRegion].Occupied = false
+
+		return ConflictOutcome{
+			Winner:  winningUnit,
+			Bounced: false,
+		}
 	}
 }
 
-func (a *GameApplication) ResolveConflict(unit1, unit2 *Unit, supportMoveOrders, supportHoldOrders map[string]int, targetRegion string) *Unit {
-	unit1Strength := 1 + supportMoveOrders[unit1.CurrentOrder.FromRegion]
-	unit2Strength := 1 + supportMoveOrders[unit2.CurrentOrder.FromRegion]
-
-	if unit1.Position == targetRegion {
-		unit1Strength += supportHoldOrders[targetRegion]
-	}
-	if unit2.Position == targetRegion {
-		unit2Strength += supportHoldOrders[targetRegion]
+/*func (a *GameApplication) resolveConflicts(moveOrders []MoveOrder, supportOrders []SupportOrder) {
+	destinationMap := make(map[string][]*Unit)
+	fmt.Println("olha eu", len(supportOrders))
+	for _, moveOrder := range moveOrders {
+		destinationMap[moveOrder.ToRegion] = append(destinationMap[moveOrder.ToRegion], moveOrder.Unit)
 	}
 
-	if unit1Strength > unit2Strength {
-		return unit1
-	}
-	if unit2Strength > unit1Strength {
-		return unit2
-	}
-
-	if unit1.Position == targetRegion {
-		return unit1
-	}
-	if unit2.Position == targetRegion {
-		return unit2
+	supportCount := make(map[*Unit]int)
+	for _, supportOrder := range supportOrders {
+		supportCount[supportOrder.SupportedUnit]++
+		fmt.Println("sup", supportCount[supportOrder.SupportedUnit], supportOrder.SupportedUnit.ID)
 	}
 
-	return nil
-}
+	for _, units := range destinationMap {
+		if len(units) > 1 {
+			fmt.Println("conflito")
+			// There is a conflict
+			var maxSupport int
+			var winningUnit *Unit
+			tie := false
 
-func (a *GameApplication) getUnitAtPosition(position string) *Unit {
-	for _, unit := range a.state.Units {
+			for _, unit := range units {
+				if supportCount[unit] > maxSupport {
+					maxSupport = supportCount[unit]
+					winningUnit = unit
+					tie = false
+				} else if supportCount[unit] == maxSupport {
+					tie = true
+				}
+			}
+
+			if tie {
+				// If there's a tie, all moves fail
+				for _, unit := range units {
+					a.state.Board[unit.Position].Occupied = true
+				}
+			} else {
+				fmt.Println("ganhou", winningUnit.ID)
+				// Only the winning unit moves
+				outcome := ConflictOutcome{
+					Winner:  winningUnit,
+					Bounced: false,
+				}
+				UpdateGameState(outcome, &a.state)
+
+				// All other units fail to move
+				for _, unit := range units {
+					if unit != winningUnit {
+						a.state.Board[unit.Position].Occupied = true
+					}
+				}
+			}
+		}
+	}
+}*/
+
+func (g *GameState) getUnitAtPosition(position string) *Unit {
+	for _, unit := range g.Units {
 		if unit.Position == position {
 			return unit
 		}
 	}
 	return nil
-}
-
-func (a *GameApplication) processSupportMoveOrders() map[string]int {
-	supportOrders := make(map[string]int)
-
-	for _, unit := range a.state.Units {
-		if unit.CurrentOrder.Ordertype == "support move" {
-			fromRegion := unit.CurrentOrder.FromRegion
-			supportOrders[fromRegion]++
-		}
-	}
-
-	return supportOrders
-}
-
-func (a *GameApplication) processSupportHoldOrders() map[string]int {
-	supportOrders := make(map[string]int)
-
-	for _, unit := range a.state.Units {
-		if unit.CurrentOrder.Ordertype == "support hold" {
-			toRegion := unit.CurrentOrder.ToRegion
-			supportOrders[toRegion]++
-		}
-	}
-
-	return supportOrders
-}
-
-func (a *GameApplication) ExecuteOrders() {
-	supportMoveOrders := a.processSupportMoveOrders()
-	supportHoldOrders := a.processSupportHoldOrders()
-
-	for _, unit := range a.state.Units {
-		if unit.CurrentOrder.Ordertype == "move" {
-			a.executeMove(unit, supportMoveOrders, supportHoldOrders)
-		}
-	}
 }
 
 // UpdateGameState updates the game state based on the outcome of a conflict
@@ -556,12 +626,21 @@ func (a *GameApplication) ReadyOrders(
 	return nil
 }
 
+func (a *GameApplication) processMoves() {
+	moveOrders := a.prepareMoves()
+	//supportOrders := a.prepareSupports()
+	a.executeMoves(moveOrders)
+	ResolveMovementConflicts(&a.state)
+}
+
 func (a *GameApplication) passTurn() error {
 	for _, player := range a.state.Players {
 		player.Ready = false
 	}
+
 	if a.state.Turn == "move" {
-		a.ResolveMovementConflicts()
+		// Register all departures
+		a.processMoves()
 		ResetOrders(a)
 		if a.state.MoveCounter {
 			a.state.Turn = "build"

@@ -330,11 +330,44 @@ func (s *MyApplicationSuite) TestMultipleSimultaniousAttacks() {
 
 	json.Unmarshal([]byte(string(report)), &currentState)
 
-	s.Equal("Budapest", currentState.Units[1].Position)
+	s.Equal("Vienna", currentState.Units[1].Position)
 	s.Equal("Serbia", currentState.Units[2].Position)
 	s.Equal("Ukraine", currentState.Units[16].Position)
 	s.Equal("Galicia", currentState.Units[18].Position)
 	s.Equal("Bulgaria", currentState.Units[20].Position)
+	s.Nil(result)
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Rumania", "FromRegion": "Budapest"}}`
+	input2 = `{"kind": "MoveArmy", "payload" : {"UnitID": 2, "OrderType": "support move", "OrderOwner": "Austria", "ToRegion": "Rumania", "FromRegion": "Budapest"}}`
+	input3 = `{"kind": "MoveArmy", "payload" : {"UnitID": 16, "OrderType": "support move", "OrderOwner": "Russia", "ToRegion": "Rumania", "FromRegion": "Galicia"}}`
+	input4 = `{"kind": "MoveArmy", "payload" : {"UnitID": 18, "OrderType": "move", "OrderOwner": "Russia", "ToRegion": "Rumania", "FromRegion": "Galicia"}}`
+	input5 = `{"kind": "MoveArmy", "payload" : {"UnitID": 19, "OrderType": "support move", "OrderOwner": "Russia", "ToRegion": "Rumania", "FromRegion": "Galicia"}}`
+	input6 := `{"kind": "MoveArmy", "payload" : {"UnitID": 20, "OrderType": "move", "OrderOwner": "Turkey", "ToRegion": "Rumania", "FromRegion": "Bulgaria"}}`
+
+	r1 = s.tester.Advance(Austria, []byte(input1))
+	s.Nil(r1.Err)
+	r2 = s.tester.Advance(Austria, []byte(input2))
+	s.Nil(r2.Err)
+	r3 = s.tester.Advance(Russia, []byte(input3))
+	s.Nil(r3.Err)
+	r4 = s.tester.Advance(Russia, []byte(input4))
+	s.Nil(r4.Err)
+	r5 = s.tester.Advance(Russia, []byte(input5))
+	s.Nil(r5.Err)
+	r6 := s.tester.Advance(Turkey, []byte(input6))
+	s.Nil(r6.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Vienna", currentState.Units[1].Position)
+	s.Equal("Serbia", currentState.Units[2].Position)
+	s.Equal("Ukraine", currentState.Units[16].Position)
+	s.Equal("Rumania", currentState.Units[18].Position)
+	s.Equal("Sevastopol", currentState.Units[19].Position)
+	s.Equal("Bulgaria", currentState.Units[20].Position)
+	s.Equal(true, currentState.Board["Rumania"].Occupied)
 	s.Nil(result)
 
 }
