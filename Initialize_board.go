@@ -123,7 +123,7 @@ func initializeRegions() map[string]*Region {
 
 	//Regions are created as as owner neutral, not Coastal, not sea, not occupied  and not a supply center
 	for _, name := range regionNames {
-		Map[name] = &Region{Name: name, Occupied: false, Owner: "Neutral", SupplyCenter: false, Coastal: false, Sea: false}
+		Map[name] = &Region{Name: name, Occupied: false, Owner: "Neutral", SupplyCenter: false, Coastal: false, Sea: false, Harbors: false}
 	}
 
 	//All the regions connections as a map of strings
@@ -178,7 +178,7 @@ func initializeRegions() map[string]*Region {
 		"Norway":                {"North Sea", "Norwegian Sea", "Sweden", "Finland", "St Petersburg", "Barents Sea"},
 		"Sweden":                {"Norway", "Baltic Sea", "Gulf of Bothnia", "Finland", "Denmark", "Skagerrak"},
 		"Serbia":                {"Budapest", "Rumania", "Bulgaria", "Albania", "Greece", "Trieste"},
-		"Rumania":               {"Budapest", "Ukraine", "Sevastopol", "Bulgaria", "Black Sea", "Serbia"},
+		"Rumania":               {"Budapest", "Ukraine", "Sevastopol", "Bulgaria", "Black Sea", "Serbia", "Galicia"},
 		"Bulgaria":              {"Rumania", "Black Sea", "Constantinople", "Aegean Sea", "Greece", "Serbia"},
 		"Albania":               {"Trieste", "Serbia", "Greece", "Adriatic Sea", "Ionian Sea"},
 		"Greece":                {"Albania", "Serbia", "Bulgaria", "Aegean Sea", "Ionian Sea"},
@@ -303,6 +303,14 @@ func initializeRegions() map[string]*Region {
 
 	for _, name := range coastalRegions {
 		Map[name].Coastal = true
+	}
+
+	harborRegions := []string{
+		"Bulgaria", "St. Petersburg", "Spain",
+	}
+
+	for _, name := range harborRegions {
+		Map[name].Harbors = true
 	}
 
 	//Setting the initial army positions for each team

@@ -308,6 +308,25 @@ func (s *MyApplicationSuite) TestSupportHoldSuccess() {
 
 }
 
+func (s *MyApplicationSuite) TestMoveToPositionWithLeavingUnit() {
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Budapest", "FromRegion": "Vienna"}}`
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 2, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Serbia", "FromRegion": "Budapest"}}`
+
+	r1 := s.tester.Advance(Austria, []byte(input1))
+	s.Nil(r1.Err)
+	r2 := s.tester.Advance(Austria, []byte(input2))
+	s.Nil(r2.Err)
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Budapest", currentState.Units[1].Position)
+	s.Equal("Serbia", currentState.Units[2].Position)
+
+	s.Nil(result)
+}
+
 func (s *MyApplicationSuite) TestMultipleSimultaniousAttacks() {
 	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Budapest", "FromRegion": "Vienna"}}`
 	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 2, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Serbia", "FromRegion": "Budapest"}}`
@@ -330,7 +349,7 @@ func (s *MyApplicationSuite) TestMultipleSimultaniousAttacks() {
 
 	json.Unmarshal([]byte(string(report)), &currentState)
 
-	s.Equal("Vienna", currentState.Units[1].Position)
+	s.Equal("Budapest", currentState.Units[1].Position)
 	s.Equal("Serbia", currentState.Units[2].Position)
 	s.Equal("Ukraine", currentState.Units[16].Position)
 	s.Equal("Galicia", currentState.Units[18].Position)
@@ -361,7 +380,7 @@ func (s *MyApplicationSuite) TestMultipleSimultaniousAttacks() {
 
 	json.Unmarshal([]byte(string(report)), &currentState)
 
-	s.Equal("Vienna", currentState.Units[1].Position)
+	s.Equal("Budapest", currentState.Units[1].Position)
 	s.Equal("Serbia", currentState.Units[2].Position)
 	s.Equal("Ukraine", currentState.Units[16].Position)
 	s.Equal("Rumania", currentState.Units[18].Position)
@@ -370,6 +389,157 @@ func (s *MyApplicationSuite) TestMultipleSimultaniousAttacks() {
 	s.Equal(true, currentState.Board["Rumania"].Occupied)
 	s.Nil(result)
 
+}
+
+func (s *MyApplicationSuite) TestConvoy() {
+
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "convoy", "OrderOwner": "England", "ToRegion": "Holland", "FromRegion": "Liverpool"}}`
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "convoy move", "OrderOwner": "England", "ToRegion": "Holland", "FromRegion": "Liverpool"}}`
+
+	r1 := s.tester.Advance(England, []byte(input1))
+	s.ErrorContains(r1.Err, "cant convoy if the unit is not at sea")
+	r2 := s.tester.Advance(England, []byte(input2))
+	s.ErrorContains(r2.Err, "no available boats to convoy")
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Liverpool", currentState.Units[5].Position)
+	s.Equal("London", currentState.Units[4].Position)
+	s.Nil(result)
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "move", "OrderOwner": "England", "ToRegion": "North Sea", "FromRegion": "London"}}`
+
+	r1 = s.tester.Advance(England, []byte(input1))
+	s.Nil(r1.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Liverpool", currentState.Units[5].Position)
+	s.Equal("North Sea", currentState.Units[4].Position)
+	s.Nil(result)
+
+	s.PassTurn()
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "convoy move", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Liverpool"}}`
+	r1 = s.tester.Advance(England, []byte(input1))
+	s.ErrorContains(r1.Err, "no available boats to convoy")
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "move", "OrderOwner": "England", "ToRegion": "Yorkshire", "FromRegion": "Liverpool"}}`
+	r1 = s.tester.Advance(England, []byte(input1))
+	s.Nil(r1.Err)
+	s.PassTurn()
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "convoy move", "OrderOwner": "England", "ToRegion": "Sweden", "FromRegion": "Yorkshire"}}`
+	r1 = s.tester.Advance(England, []byte(input1))
+	s.ErrorContains(r1.Err, "cant convoy to a coast more than one sea tile away")
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "convoy move", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Yorkshire"}}`
+	r1 = s.tester.Advance(England, []byte(input1))
+	s.Nil(r1.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Yorkshire", currentState.Units[5].Position)
+	s.Nil(result)
+
+	s.PassTurn()
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "convoy", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Yorkshire"}}`
+	input2 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "convoy move", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Yorkshire"}}`
+
+	r1 = s.tester.Advance(England, []byte(input1))
+	r2 = s.tester.Advance(England, []byte(input2))
+	s.Nil(r1.Err)
+	s.Nil(r2.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Norway", currentState.Units[5].Position)
+	s.Nil(result)
+}
+
+func (s *MyApplicationSuite) TestConvoyAttacked() {
+
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "move", "OrderOwner": "England", "ToRegion": "North Sea", "FromRegion": "London"}}`
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "move", "OrderOwner": "England", "ToRegion": "Yorkshire", "FromRegion": "Liverpool"}}`
+	input3 := `{"kind": "MoveArmy", "payload" : {"UnitID": 8, "OrderType": "move", "OrderOwner": "France", "ToRegion": "English Channel", "FromRegion": "Brest"}}`
+
+	r1 := s.tester.Advance(England, []byte(input1))
+	r2 := s.tester.Advance(England, []byte(input2))
+	r3 := s.tester.Advance(France, []byte(input3))
+	s.Nil(r1.Err)
+	s.Nil(r2.Err)
+	s.Nil(r3.Err)
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Yorkshire", currentState.Units[5].Position)
+	s.Equal("North Sea", currentState.Units[4].Position)
+	s.Equal("English Channel", currentState.Units[8].Position)
+	s.Nil(result)
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "convoy move", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Yorkshire"}}`
+	input2 = `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "convoy", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Yorkshire"}}`
+	input3 = `{"kind": "MoveArmy", "payload" : {"UnitID": 8, "OrderType": "move", "OrderOwner": "France", "ToRegion": "North Sea", "FromRegion": "English Channel"}}`
+
+	r1 = s.tester.Advance(England, []byte(input1))
+	r2 = s.tester.Advance(England, []byte(input2))
+	r3 = s.tester.Advance(France, []byte(input3))
+	s.Nil(r1.Err)
+	s.Nil(r2.Err)
+	s.Nil(r3.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Yorkshire", currentState.Units[5].Position)
+	s.Equal("North Sea", currentState.Units[4].Position)
+	s.Equal("English Channel", currentState.Units[8].Position)
+	s.Nil(result)
+}
+
+func (s *MyApplicationSuite) TestConvoyDebug() {
+
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "move", "OrderOwner": "England", "ToRegion": "North Sea", "FromRegion": "London"}}`
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "move", "OrderOwner": "England", "ToRegion": "Yorkshire", "FromRegion": "Liverpool"}}`
+
+	r1 := s.tester.Advance(England, []byte(input1))
+	r2 := s.tester.Advance(England, []byte(input2))
+	s.Nil(r1.Err)
+	s.Nil(r2.Err)
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Yorkshire", currentState.Units[5].Position)
+	s.Equal("North Sea", currentState.Units[4].Position)
+	s.Nil(result)
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "convoy move", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Yorkshire"}}`
+	input2 = `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "convoy", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Yorkshire"}}`
+	r1 = s.tester.Advance(England, []byte(input1))
+	r2 = s.tester.Advance(England, []byte(input2))
+	s.Nil(r1.Err)
+	s.Nil(r2.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Norway", currentState.Units[5].Position)
+	s.Nil(result)
 }
 
 func (s *MyApplicationSuite) TestInspect() {
