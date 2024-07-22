@@ -263,7 +263,7 @@ func (s *MyApplicationSuite) TestSupportMove() {
 	json.Unmarshal([]byte(string(report)), &currentState)
 
 	s.Equal("Venice", currentState.Units[1].Position)
-	s.Equal("Venice", currentState.Units[14].Retreating)
+	s.Equal("Tyrolia", currentState.Units[14].Retreating)
 	s.Nil(result)
 
 }
@@ -540,6 +540,117 @@ func (s *MyApplicationSuite) TestConvoyDebug() {
 
 	s.Equal("Norway", currentState.Units[5].Position)
 	s.Nil(result)
+}
+
+func (s *MyApplicationSuite) TestMovingFromSubRegions() {
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 17, "OrderType": "move", "OrderOwner": "Russia", "ToRegion": "Norway", "FromRegion": "St Petersburg", "FromSubRegion": "South Coast"}}`
+	r1 := s.tester.Advance(Russia, []byte(input1))
+	s.ErrorContains(r1.Err, "cant reach this region from this harbor")
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 17, "OrderType": "move", "OrderOwner": "Russia", "ToRegion": "Finland", "FromRegion": "St Petersburg", "FromSubRegion": "South Coast"}}`
+	r1 = s.tester.Advance(Russia, []byte(input1))
+	s.Nil(r1.Err)
+
+}
+
+func (s *MyApplicationSuite) TestMovingIntoSubRegions() {
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 22, "OrderType": "move", "OrderOwner": "Turkey", "ToRegion": "Black Sea", "FromRegion": "Ankara", "FromSubRegion": ""}}`
+	r1 := s.tester.Advance(Turkey, []byte(input1))
+	s.Nil(r1.Err)
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Black Sea", currentState.Units[22].Position)
+	s.Nil(result)
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 22, "OrderType": "move", "OrderOwner": "Turkey", "ToRegion": "Bulgaria", "FromRegion": "Black Sea", "ToSubRegion": ""}}`
+	r1 = s.tester.Advance(Turkey, []byte(input1))
+	s.ErrorContains(r1.Err, "need to specify the sub region and can't move directly between sub regions")
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 22, "OrderType": "move", "OrderOwner": "Turkey", "ToRegion": "Bulgaria", "FromRegion": "Black Sea", "ToSubRegion": "South Coast"}}`
+	r1 = s.tester.Advance(Turkey, []byte(input1))
+	s.ErrorContains(r1.Err, "cant move to non adjacent harbor")
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 22, "OrderType": "move", "OrderOwner": "Turkey", "ToRegion": "Bulgaria", "FromRegion": "Black Sea", "FromSubRegion": "", "ToSubRegion": "North Coast"}}`
+	r1 = s.tester.Advance(Turkey, []byte(input1))
+	s.Nil(result)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Bulgaria", currentState.Units[22].Position)
+	s.Equal("North Coast", currentState.Units[22].SubPosition)
+	s.Nil(result)
+
+}
+
+func (s *MyApplicationSuite) TestRetreat() {
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Tyrolia", "FromRegion": "Vienna"}}`
+
+	r1 := s.tester.Advance(Austria, []byte(input1))
+	s.Nil(r1.Err)
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Tyrolia", currentState.Units[1].Position)
+	s.Nil(result)
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Tyrolia"}}`
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 3, "OrderType": "support move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Tyrolia"}}`
+
+	r1 = s.tester.Advance(Austria, []byte(input1))
+	s.Nil(r1.Err)
+	r2 := s.tester.Advance(Austria, []byte(input2))
+	s.Nil(r2.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Venice", currentState.Units[1].Position)
+	s.Equal("Trieste", currentState.Units[3].Position)
+	s.Equal("Venice", currentState.Units[14].Position)
+	s.Equal("", currentState.Units[1].Retreating)
+	s.Equal("", currentState.Units[3].Retreating)
+	s.Equal("", currentState.Units[13].Retreating)
+	s.Equal("Tyrolia", currentState.Units[14].Retreating)
+	s.Equal("retreats", currentState.Turn)
+	s.Nil(result)
+
+	input1 = `{"kind": "Retreat", "payload" : {"UnitID": 14, "OrderType": "move", "OrderOwner": "Italy", "ToRegion": "Venice", "FromRegion": "Venice"}}`
+	r1 = s.tester.Advance(Italy, []byte(input1))
+	s.ErrorContains(r1.Err, "cant retreat to the same place")
+
+	input1 = `{"kind": "Retreat", "payload" : {"UnitID": 14, "OrderType": "move", "OrderOwner": "Italy", "ToRegion": "Tyrolia", "FromRegion": "Venice"}}`
+	r1 = s.tester.Advance(Italy, []byte(input1))
+	s.ErrorContains(r1.Err, "cant retreat forward")
+
+	//giving no retreat orders should delete the unit
+
+	//report, result = s.PassTurn()
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	_, ok := currentState.Units[14]
+
+	s.Equal("build", currentState.Turn)
+	s.Equal(false, ok)
+	s.Nil(result)
+
+}
+
+func (s *MyApplicationSuite) TestMoveFromFlasePosition() {
+
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 17, "OrderType": "move", "OrderOwner": "Turkey", "ToRegion": "Black Sea", "FromRegion": "Ankara", "ToSubRegion": ""}}`
+	r1 := s.tester.Advance(Russia, []byte(input1))
+	s.ErrorContains(r1.Err, "your army is not there")
+
 }
 
 func (s *MyApplicationSuite) TestInspect() {

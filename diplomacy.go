@@ -21,14 +21,19 @@ type GameState struct {
 
 // The board is built of regions wich have a name, are either occupied or not, are owned by a player, are either a base or not and are connected to other regions
 type Region struct {
-	Name         string    `json:"name"`
-	Occupied     bool      `json:"occupied"`
-	Owner        string    `json:"owner"`
-	SupplyCenter bool      `json:"supplyCenter"`
-	Coastal      bool      `json:"coastal"`
-	Sea          bool      `json:"sea"`
-	Harbors      bool      `json:"harbor"`
-	Neighbors    []*string `json:"frontiers"`
+	Name         string              `json:"name"`
+	Occupied     bool                `json:"occupied"`
+	Owner        string              `json:"owner"`
+	SupplyCenter bool                `json:"supplyCenter"`
+	Coastal      bool                `json:"coastal"`
+	Sea          bool                `json:"sea"`
+	Neighbors    []*string           `json:"frontiers"`
+	SubRegions   map[string][]string `json:"subRegions"`
+}
+
+type SubRegion struct {
+	Name      string   `json:"name"`
+	Neighbors []string `json:"neighbors"`
 }
 
 // Movement struct to handle move turns
@@ -87,6 +92,7 @@ type Unit struct {
 	ID           int    `json:"ID"`
 	Type         string `json:"type"`
 	Position     string `json:"position"`
+	SubPosition  string `json:"subPosition"`
 	Owner        string `json:"owner"`
 	CurrentOrder Orders `json:"currentOrder"`
 	Retreating   string `json:"retreating"`
@@ -100,30 +106,35 @@ var UnitID int = 0
 // Owner of  the army
 // Delete is a bool indicating if the player is deleting an army
 type BuildArmyPayload struct {
-	Type     string `json:"type"`
-	Position string `json:"Position"`
-	Owner    string `json:"owner"`
-	Delete   int    `json:"delete"`
+	Type        string `json:"type"`
+	Position    string `json:"Position"`
+	SubPosition string `json:"subPosition"`
+	Owner       string `json:"owner"`
+	Delete      int    `json:"delete"`
 }
 
 type Orders struct {
-	UnitID     int    `json:"unitID"`
-	Ordertype  string `json:"orderType"`
-	OrderOwner string `json:"orderOwner"`
-	ToRegion   string `json:"toRegion"`
-	FromRegion string `json:"fromRegion"`
+	UnitID        int    `json:"unitID"`
+	Ordertype     string `json:"orderType"`
+	OrderOwner    string `json:"orderOwner"`
+	ToRegion      string `json:"toRegion"`
+	ToSubRegion   string `json:"toSubRegion"`
+	FromRegion    string `json:"fromRegion"`
+	FromSubRegion string `json:"fromSubRegion"`
 }
 
 type MoveOrder struct {
 	Unit       *Unit
 	FromRegion string
 	ToRegion   string
+	SubRegion  string
 }
 
 type RetreatOrderPayload struct {
-	UnitID   int    `json:"unitID"`
-	Delete   bool   `json:"delete"`
-	ToRegion string `json:"toRegion"`
+	UnitID      int    `json:"unitID"`
+	Delete      bool   `json:"delete"`
+	ToRegion    string `json:"toRegion"`
+	ToSubRegion string `json:"toSubRegion"`
 }
 
 type PassTurnPayload string
@@ -139,6 +150,8 @@ type ConflictOutcome struct {
 	Loser   *Unit // The losing unit, if any
 	Bounced bool  // Indicates if the conflict resulted in units bouncing back to their original positions
 }
+
+var SubRegionsList = [3]string{"Bulgaria", "St Petersburg", "Spain"}
 
 func NewGameApplication(Austria common.Address,
 	England common.Address,
@@ -214,7 +227,7 @@ func (a *GameApplication) Advance(
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal payload: %w", err)
 		}
-		err = a.Retreat(metadata, inputPayload)
+		err = a.handleRetreat(metadata, inputPayload)
 		if err != nil {
 			return err
 		}
@@ -306,7 +319,7 @@ func BuildUnits(a *GameApplication) {
 	}
 }
 
-func (a *GameApplication) Retreat(
+func (a *GameApplication) handleRetreat(
 	metadata rollmelette.Metadata,
 	inputPayload RetreatOrderPayload,
 ) error {
@@ -314,15 +327,35 @@ func (a *GameApplication) Retreat(
 	if a.state.Turn != "retreats" {
 		return fmt.Errorf("cant issue a retreat order outside retreating phase")
 	}
-	if a.state.Players[metadata.MsgSender].Name != a.state.Units[inputPayload.UnitID].Owner {
+	unit, ok := a.state.Units[inputPayload.UnitID]
+	if !ok {
+		return fmt.Errorf("unit not found")
+	}
+	if a.state.Players[metadata.MsgSender].Name != unit.Owner {
 		return fmt.Errorf("cant retreat another player's unit")
 	}
+	if inputPayload.ToRegion == unit.Position {
+		return fmt.Errorf("cant retreat to the same place")
+	}
+	if inputPayload.ToRegion == unit.Retreating {
+		return fmt.Errorf("cant retreat forward")
+	}
+
+	orderType := "move"
+
+	if inputPayload.Delete {
+		orderType = "delete"
+	}
+
+	orders := Orders{
+		UnitID:      inputPayload.UnitID,
+		Ordertype:   orderType,
+		ToRegion:    inputPayload.ToRegion,
+		ToSubRegion: inputPayload.ToSubRegion,
+	}
+	a.state.Units[inputPayload.UnitID].CurrentOrder = orders
 
 	return nil
-}
-
-func handleRetreat(a *GameState) {
-
 }
 
 func (a *GameApplication) handleMoveArmy(
@@ -345,9 +378,6 @@ func (a *GameApplication) handleMoveArmy(
 	if _, ok := a.state.Players[metadata.MsgSender].Armies[inputPayload.UnitID]; !ok {
 		return fmt.Errorf("can't move another player's army")
 	}
-	if a.state.Turn != "move" {
-		return fmt.Errorf("cant move an army outside move phase")
-	}
 	if !a.state.Board[inputPayload.FromRegion].Occupied {
 		return fmt.Errorf("cant order an army to move from an empty region")
 	}
@@ -359,6 +389,9 @@ func (a *GameApplication) handleMoveArmy(
 	}
 
 	if inputPayload.Ordertype == "move" {
+		if a.state.Units[inputPayload.UnitID].Position != inputPayload.FromRegion {
+			return fmt.Errorf("your army is not there")
+		}
 		if a.state.Units[inputPayload.UnitID].Type == "army" && a.state.Board[inputPayload.ToRegion].Sea {
 			return fmt.Errorf("cant send an army into the sea")
 		}
@@ -369,6 +402,31 @@ func (a *GameApplication) handleMoveArmy(
 		if !isConnected(a.state.Board[inputPayload.FromRegion], &inputPayload.ToRegion) {
 			return fmt.Errorf("cant move to non adjacent territory")
 		}
+		MoveHarbor := false
+		for _, region := range SubRegionsList {
+			if (region == inputPayload.ToRegion || region == inputPayload.FromRegion) && a.state.Units[inputPayload.UnitID].Type == "navy" {
+				MoveHarbor = true
+			}
+		}
+		//navy stationed in/moving into one of the sub regions
+		if MoveHarbor {
+			if (inputPayload.FromSubRegion != "" && inputPayload.ToSubRegion != "") != (inputPayload.FromSubRegion == "" && inputPayload.ToSubRegion == "") {
+				return fmt.Errorf("need to specify the sub region and can't move directly between sub regions")
+			}
+			if inputPayload.FromSubRegion != "" {
+				if !isSubRegionConnected(a.state.Board[inputPayload.FromRegion].SubRegions[inputPayload.FromSubRegion], inputPayload.ToRegion) {
+					return fmt.Errorf("cant reach this region from this harbor")
+				}
+			} else {
+				if !isSubRegionConnected(a.state.Board[inputPayload.ToRegion].SubRegions[inputPayload.ToSubRegion], inputPayload.FromRegion) {
+					return fmt.Errorf("cant move to non adjacent harbor")
+				}
+			}
+		} else {
+			inputPayload.FromSubRegion = ""
+			inputPayload.ToSubRegion = ""
+		}
+
 	}
 
 	if inputPayload.Ordertype == "support move" {
@@ -426,21 +484,58 @@ func (a *GameApplication) handleMoveArmy(
 		}
 	}
 	orders := Orders{
-		UnitID:     inputPayload.UnitID,
-		Ordertype:  inputPayload.Ordertype,
-		OrderOwner: inputPayload.OrderOwner,
-		ToRegion:   inputPayload.ToRegion,
-		FromRegion: inputPayload.FromRegion,
+		UnitID:        inputPayload.UnitID,
+		Ordertype:     inputPayload.Ordertype,
+		OrderOwner:    inputPayload.OrderOwner,
+		ToRegion:      inputPayload.ToRegion,
+		ToSubRegion:   inputPayload.ToSubRegion,
+		FromRegion:    inputPayload.FromRegion,
+		FromSubRegion: inputPayload.FromSubRegion,
 	}
 	a.state.Units[inputPayload.UnitID].CurrentOrder = orders
 
 	return nil
 }
 
+func resolveRetreats(a *GameApplication) {
+	for _, unit := range a.state.Units {
+		if unit.CurrentOrder.Ordertype == "hold" {
+			continue
+		}
+		if unit.CurrentOrder.Ordertype == "delete" {
+			fmt.Println("found delete")
+			var playerAddress common.Address
+			for _, team := range a.state.Players {
+				if team.Name == unit.Owner {
+					playerAddress = team.Player
+				}
+			}
+			fmt.Println(playerAddress)
+			fmt.Println(unit.ID)
+			delete(a.state.Players[playerAddress].Armies, unit.ID)
+			delete(a.state.Units, unit.ID)
+			continue
+		}
+		if unit.CurrentOrder.Ordertype == "move" {
+			continue
+		}
+	}
+
+}
+
 func isConnected(From *Region, To *string) bool {
 	for _, city := range From.Neighbors {
 		c := city
 		if *c == *To {
+			return true
+		}
+	}
+	return false
+}
+
+func isSubRegionConnected(from []string, to string) bool {
+	for _, neighbor := range from {
+		if neighbor == to {
 			return true
 		}
 	}
@@ -483,6 +578,7 @@ func (a *GameApplication) prepareMoves() []MoveOrder {
 					Unit:       unit,
 					FromRegion: unit.Position,
 					ToRegion:   unit.CurrentOrder.ToRegion,
+					SubRegion:  unit.CurrentOrder.ToSubRegion + unit.CurrentOrder.FromSubRegion,
 				})
 			}
 		}
@@ -522,6 +618,7 @@ func (a *GameApplication) executeMoves(moveOrders []MoveOrder) {
 			a.state.Board[moveOrder.ToRegion].Occupied = true
 			a.state.Board[moveOrder.FromRegion].Occupied = false
 			a.state.Units[moveOrder.Unit.ID].Position = moveOrder.ToRegion
+			a.state.Units[moveOrder.Unit.ID].SubPosition = moveOrder.SubRegion
 
 			a.state.Units[moveOrder.Unit.ID].CurrentOrder.Ordertype = "hold"
 			a.state.Units[moveOrder.Unit.ID].CurrentOrder.FromRegion = ""
@@ -614,7 +711,7 @@ func ResolveMoveToOccupied(movingUnits []*Unit, occupyingUnit *Unit, gameState *
 		winningUnit.Position = winningUnit.CurrentOrder.ToRegion
 		gameState.Board[winningUnit.CurrentOrder.ToRegion].Occupied = true
 		gameState.Board[winningUnit.CurrentOrder.FromRegion].Occupied = false
-		occupyingUnit.Retreating = winningUnit.CurrentOrder.ToRegion
+		occupyingUnit.Retreating = winningUnit.CurrentOrder.FromRegion
 
 		return ConflictOutcome{
 			Winner:  winningUnit,
@@ -678,11 +775,12 @@ func UpdateGameState(outcome ConflictOutcome, a *GameState) {
 
 	if outcome.Winner != nil && outcome.Loser != nil {
 		a.Units[outcome.Winner.ID].Position = outcome.Winner.CurrentOrder.ToRegion
+		a.Units[outcome.Winner.ID].SubPosition = outcome.Winner.CurrentOrder.ToSubRegion
 		a.Board[outcome.Winner.Position].Occupied = true
 		a.Board[outcome.Winner.Position].Owner = outcome.Winner.Owner
 
 		if a.Units[outcome.Loser.ID].Position == a.Units[outcome.Winner.ID].CurrentOrder.ToRegion {
-			a.Units[outcome.Loser.ID].Retreating = a.Units[outcome.Winner.ID].Position
+			a.Units[outcome.Loser.ID].Retreating = a.Units[outcome.Winner.ID].CurrentOrder.FromRegion
 		}
 	} else {
 		a.Units[outcome.Winner.ID].Position = outcome.Winner.CurrentOrder.ToRegion
@@ -698,6 +796,14 @@ func ResetOrders(a *GameApplication) {
 		unit.CurrentOrder.OrderOwner = ""
 		unit.CurrentOrder.ToRegion = ""
 
+	}
+}
+
+func setForDelete(a *GameApplication) {
+	for _, unit := range a.state.Units {
+		if unit.Retreating != "" {
+			unit.CurrentOrder.Ordertype = "delete"
+		}
 	}
 }
 
@@ -748,7 +854,9 @@ func (a *GameApplication) passTurn() error {
 		BuildUnits(a)
 		a.state.Turn = "move"
 	} else if a.state.Turn == "retreats" {
-		handleRetreat(&a.state)
+		setForDelete(a)
+		resolveRetreats(a)
+		ResetOrders(a)
 		if a.state.MoveCounter {
 			a.state.Turn = "move"
 		} else {

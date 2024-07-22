@@ -123,7 +123,7 @@ func initializeRegions() map[string]*Region {
 
 	//Regions are created as as owner neutral, not Coastal, not sea, not occupied  and not a supply center
 	for _, name := range regionNames {
-		Map[name] = &Region{Name: name, Occupied: false, Owner: "Neutral", SupplyCenter: false, Coastal: false, Sea: false, Harbors: false}
+		Map[name] = &Region{Name: name, Occupied: false, Owner: "Neutral", SupplyCenter: false, Coastal: false, Sea: false}
 	}
 
 	//All the regions connections as a map of strings
@@ -209,6 +209,34 @@ func initializeRegions() map[string]*Region {
 			Map[name].Neighbors = append(Map[name].Neighbors, &n)
 		}
 	}
+
+	//Creating the subRegions for Bulgaria, St. Petersburg and Spain wich have separate coasts
+	Map["Bulgaria"].SubRegions = make(map[string][]string)
+	Map["Bulgaria"].SubRegions["North Coast"] = append(Map["Bulgaria"].SubRegions["North Coast"], "Rumania")
+	Map["Bulgaria"].SubRegions["North Coast"] = append(Map["Bulgaria"].SubRegions["North Coast"], "Black Sea")
+	Map["Bulgaria"].SubRegions["North Coast"] = append(Map["Bulgaria"].SubRegions["North Coast"], "Constantinople")
+
+	Map["Bulgaria"].SubRegions["South Coast"] = append(Map["Bulgaria"].SubRegions["South Coast"], "Aegean Sea")
+	Map["Bulgaria"].SubRegions["South Coast"] = append(Map["Bulgaria"].SubRegions["South Coast"], "Greece")
+	Map["Bulgaria"].SubRegions["South Coast"] = append(Map["Bulgaria"].SubRegions["South Coast"], "Constantinople")
+
+	Map["St Petersburg"].SubRegions = make(map[string][]string)
+	Map["St Petersburg"].SubRegions["North Coast"] = append(Map["St Petersburg"].SubRegions["North Coast"], "Norway")
+	Map["St Petersburg"].SubRegions["North Coast"] = append(Map["St Petersburg"].SubRegions["North Coast"], "Barents Sea")
+
+	Map["St Petersburg"].SubRegions["South Coast"] = append(Map["St Petersburg"].SubRegions["South Coast"], "Gulf of Bothnia")
+	Map["St Petersburg"].SubRegions["South Coast"] = append(Map["St Petersburg"].SubRegions["South Coast"], "Finland")
+	Map["St Petersburg"].SubRegions["South Coast"] = append(Map["St Petersburg"].SubRegions["South Coast"], "Livonia")
+
+	Map["Spain"].SubRegions = make(map[string][]string)
+	Map["Spain"].SubRegions["North Coast"] = append(Map["Spain"].SubRegions["North Coast"], "Portugal")
+	Map["Spain"].SubRegions["North Coast"] = append(Map["Spain"].SubRegions["North Coast"], "Mid Atlantic Ocean")
+	Map["Spain"].SubRegions["North Coast"] = append(Map["Spain"].SubRegions["North Coast"], "Gascony")
+
+	Map["Spain"].SubRegions["South Coast"] = append(Map["Spain"].SubRegions["South Coast"], "Mid Atlantic Ocean")
+	Map["Spain"].SubRegions["South Coast"] = append(Map["Spain"].SubRegions["South Coast"], "Western Mediterranean")
+	Map["Spain"].SubRegions["South Coast"] = append(Map["Spain"].SubRegions["South Coast"], "Gulf of Lyon")
+	Map["Spain"].SubRegions["South Coast"] = append(Map["Spain"].SubRegions["South Coast"], "Marseilles")
 
 	//Adding the supplycenter bool to the supply regions
 	supplyCenters := []string{
@@ -305,14 +333,6 @@ func initializeRegions() map[string]*Region {
 		Map[name].Coastal = true
 	}
 
-	harborRegions := []string{
-		"Bulgaria", "St. Petersburg", "Spain",
-	}
-
-	for _, name := range harborRegions {
-		Map[name].Harbors = true
-	}
-
 	//Setting the initial army positions for each team
 
 	Map["Budapest"].Occupied = true
@@ -366,7 +386,7 @@ func initializeUnits() map[int]*Unit {
 		14: {ID: 14, Type: "army", Position: "Venice", Owner: "Italy", CurrentOrder: Orders{UnitID: 14, Ordertype: "hold"}, Retreating: ""},
 		15: {ID: 15, Type: "navy", Position: "Naples", Owner: "Italy", CurrentOrder: Orders{UnitID: 15, Ordertype: "hold"}, Retreating: ""},
 		16: {ID: 16, Type: "Army", Position: "Moscow", Owner: "Russia", CurrentOrder: Orders{UnitID: 16, Ordertype: "hold"}, Retreating: ""},
-		17: {ID: 17, Type: "navy", Position: "St Petersburg", Owner: "Russia", CurrentOrder: Orders{UnitID: 17, Ordertype: "hold"}, Retreating: ""},
+		17: {ID: 17, Type: "navy", Position: "St Petersburg", SubPosition: "South Coast", Owner: "Russia", CurrentOrder: Orders{UnitID: 17, Ordertype: "hold"}, Retreating: ""},
 		18: {ID: 18, Type: "army", Position: "Warsaw", Owner: "Russia", CurrentOrder: Orders{UnitID: 18, Ordertype: "hold"}, Retreating: ""},
 		19: {ID: 19, Type: "navy", Position: "Sevastopol", Owner: "Russia", CurrentOrder: Orders{UnitID: 19, Ordertype: "hold"}, Retreating: ""},
 		20: {ID: 20, Type: "army", Position: "Constantinople", Owner: "Turkey", CurrentOrder: Orders{UnitID: 20, Ordertype: "hold"}, Retreating: ""},
