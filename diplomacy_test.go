@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/gligneul/rollmelette"
+	"github.com/rollmelette/rollmelette"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -41,30 +41,38 @@ func (s *MyApplicationSuite) SetupTest() {
 
 func (s *MyApplicationSuite) PassTurn() ([]byte, error) {
 	result := s.tester.Advance(Austria, PassTurnPayloadSetup)
+	fmt.Println("uno")
 	if result.Err != nil {
+		fmt.Println("uno")
 		return result.Reports[0].Payload, result.Err
 	}
+	fmt.Println("dos")
 	result = s.tester.Advance(England, PassTurnPayloadSetup)
 	if result.Err != nil {
 		return result.Reports[0].Payload, result.Err
 	}
 	result = s.tester.Advance(France, PassTurnPayloadSetup)
+	fmt.Println("solotres")
 	if result.Err != nil {
 		return result.Reports[0].Payload, result.Err
 	}
 	result = s.tester.Advance(Germany, PassTurnPayloadSetup)
+	fmt.Println("trestres")
 	if result.Err != nil {
 		return result.Reports[0].Payload, result.Err
 	}
 	result = s.tester.Advance(Italy, PassTurnPayloadSetup)
+	fmt.Println("quatro")
 	if result.Err != nil {
 		return result.Reports[0].Payload, result.Err
 	}
 	result = s.tester.Advance(Russia, PassTurnPayloadSetup)
+	fmt.Println("xinco")
 	if result.Err != nil {
 		return result.Reports[0].Payload, result.Err
 	}
 	result = s.tester.Advance(Turkey, PassTurnPayloadSetup)
+	fmt.Println("hue")
 	if result.Err != nil {
 		return result.Reports[0].Payload, result.Err
 	}
@@ -598,7 +606,7 @@ func (s *MyApplicationSuite) TestMovingIntoSubRegions() {
 
 }
 
-func (s *MyApplicationSuite) TestRetreat() {
+func (s *MyApplicationSuite) TestEmptyRetreat() {
 	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Tyrolia", "FromRegion": "Vienna"}}`
 
 	r1 := s.tester.Advance(Austria, []byte(input1))
@@ -643,6 +651,63 @@ func (s *MyApplicationSuite) TestRetreat() {
 
 	//giving no retreat orders should delete the unit
 
+	report, result = s.PassTurn()
+
+	var newState GameState
+
+	err := json.Unmarshal([]byte(report), &newState)
+	s.Nil(err, "Unmarshal should not error out")
+
+	fmt.Println(newState.Units)
+
+	_, ok := newState.Units[14]
+	s.Equal(false, ok)
+	s.Nil(result)
+}
+
+func (s *MyApplicationSuite) TestDeleteRetreat() {
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Tyrolia", "FromRegion": "Vienna"}}`
+
+	r1 := s.tester.Advance(Austria, []byte(input1))
+	s.Nil(r1.Err)
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Tyrolia", currentState.Units[1].Position)
+	s.Nil(result)
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Tyrolia"}}`
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 3, "OrderType": "support move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Tyrolia"}}`
+
+	r1 = s.tester.Advance(Austria, []byte(input1))
+	s.Nil(r1.Err)
+	r2 := s.tester.Advance(Austria, []byte(input2))
+	s.Nil(r2.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Venice", currentState.Units[1].Position)
+	s.Equal("Trieste", currentState.Units[3].Position)
+	s.Equal("Venice", currentState.Units[14].Position)
+	s.Equal("", currentState.Units[1].Retreating)
+	s.Equal("", currentState.Units[3].Retreating)
+	s.Equal("", currentState.Units[13].Retreating)
+	s.Equal("Tyrolia", currentState.Units[14].Retreating)
+	s.Equal("retreats", currentState.Turn)
+	s.Nil(result)
+
+	input1 = `{"kind": "Retreat", "payload" : {"UnitID": 14, "OrderType": "move", "OrderOwner": "Italy", "ToRegion": "Venice", "FromRegion": "Venice"}}`
+	r1 = s.tester.Advance(Italy, []byte(input1))
+	s.ErrorContains(r1.Err, "can't retreat to the same place")
+
+	input1 = `{"kind": "Retreat", "payload" : {"UnitID": 14, "OrderType": "move", "OrderOwner": "Italy", "ToRegion": "Tyrolia", "FromRegion": "Venice"}}`
+	r1 = s.tester.Advance(Italy, []byte(input1))
+	s.ErrorContains(r1.Err, "can't retreat forward to the attacking region")
+
 	input1 = `{"kind": "Retreat", "payload" : {"UnitID": 14, "Delete": true, "ToRegion": "", "ToSubRegion": ""}}`
 	r1 = s.tester.Advance(Italy, []byte(input1))
 	s.Nil(r1.Err)
@@ -654,27 +719,75 @@ func (s *MyApplicationSuite) TestRetreat() {
 	err := json.Unmarshal([]byte(report), &newState)
 	s.Nil(err, "Unmarshal should not error out")
 
-	fmt.Println("kkkkkkkk")
-	fmt.Println("kkkkkkkk")
-	fmt.Println("kkkkkkkk")
-	fmt.Println("kkkkkkkk")
-	fmt.Println("kkkkkkkk")
-	fmt.Println("kkkkkkkk")
-	fmt.Println("kkkkkkkk")
-	fmt.Println("kkkkkkkk")
 	fmt.Println(newState.Units)
-	fmt.Println("kkkkkkkk")
-	fmt.Println("kkkkkkkk")
 
 	_, ok := newState.Units[14]
 	s.Equal(false, ok)
 	s.Nil(result)
 
-	//s.PassTurn()
+}
 
-	//input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Tuscany", "FromRegion": "Venice"}}`
-	//r1 = s.tester.Advance(Austria, []byte(input1))
-	//s.Nil(r1)
+func (s *MyApplicationSuite) TestMoveRetreat() {
+	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Tyrolia", "FromRegion": "Vienna"}}`
+
+	r1 := s.tester.Advance(Austria, []byte(input1))
+	s.Nil(r1.Err)
+
+	report, result := s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Tyrolia", currentState.Units[1].Position)
+	s.Nil(result)
+
+	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Tyrolia"}}`
+	input2 := `{"kind": "MoveArmy", "payload" : {"UnitID": 3, "OrderType": "support move", "OrderOwner": "Austria", "ToRegion": "Venice", "FromRegion": "Tyrolia"}}`
+
+	r1 = s.tester.Advance(Austria, []byte(input1))
+	s.Nil(r1.Err)
+	r2 := s.tester.Advance(Austria, []byte(input2))
+	s.Nil(r2.Err)
+
+	report, result = s.PassTurn()
+
+	json.Unmarshal([]byte(string(report)), &currentState)
+
+	s.Equal("Venice", currentState.Units[1].Position)
+	s.Equal("Trieste", currentState.Units[3].Position)
+	s.Equal("Venice", currentState.Units[14].Position)
+	s.Equal("", currentState.Units[1].Retreating)
+	s.Equal("", currentState.Units[3].Retreating)
+	s.Equal("", currentState.Units[13].Retreating)
+	s.Equal("Tyrolia", currentState.Units[14].Retreating)
+	s.Equal("retreats", currentState.Turn)
+	s.Nil(result)
+
+	input1 = `{"kind": "Retreat", "payload" : {"UnitID": 14, "OrderType": "move", "OrderOwner": "Italy", "ToRegion": "Venice", "FromRegion": "Venice"}}`
+	r1 = s.tester.Advance(Italy, []byte(input1))
+	s.ErrorContains(r1.Err, "can't retreat to the same place")
+
+	input1 = `{"kind": "Retreat", "payload" : {"UnitID": 14, "OrderType": "move", "OrderOwner": "Italy", "ToRegion": "Tyrolia", "FromRegion": "Venice"}}`
+	r1 = s.tester.Advance(Italy, []byte(input1))
+	s.ErrorContains(r1.Err, "can't retreat forward to the attacking region")
+
+	input1 = `{"kind": "Retreat", "payload" : {"UnitID": 14, "delete": false, "ToRegion": "Tuscany", "ToSubRegion": ""}}`
+	r1 = s.tester.Advance(Italy, []byte(input1))
+	s.Nil(r1.Err)
+
+	report, result = s.PassTurn()
+
+	var newState GameState
+
+	err := json.Unmarshal([]byte(report), &newState)
+	s.Nil(err, "Unmarshal should not error out")
+
+	fmt.Println(newState.Units)
+
+	_, ok := newState.Units[14]
+	s.Equal(true, ok)
+	s.Equal("Tuscany", newState.Units[14].Position)
+	s.Nil(result)
+
 }
 
 func (s *MyApplicationSuite) TestPrint() {
