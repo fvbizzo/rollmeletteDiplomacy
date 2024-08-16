@@ -281,7 +281,10 @@ func (a *GameApplication) ReadyOrders(
 			return nil
 		}
 	}
-	a.passTurn()
+	err := a.passTurn()
+	if err != nil {
+		return fmt.Errorf("pass turn function not working")
+	}
 	return nil
 }
 

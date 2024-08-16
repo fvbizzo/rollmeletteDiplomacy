@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -70,7 +71,7 @@ func (s *MyApplicationSuite) PassTurn() ([]byte, error) {
 	return result.Reports[0].Payload, nil
 }
 
-/*func (s *MyApplicationSuite) TestDeleteArmy() {
+func (s *MyApplicationSuite) TestDeleteArmy() {
 
 	s.PassTurn()
 	s.PassTurn()
@@ -716,7 +717,7 @@ func (s *MyApplicationSuite) TestDeleteRetreat() {
 	s.Equal(false, ok)
 	s.Nil(result)
 
-}*/
+}
 
 func (s *MyApplicationSuite) TestMoveRetreat() {
 	input1 := `{"kind": "MoveArmy", "payload" : {"UnitID": 1, "OrderType": "move", "OrderOwner": "Austria", "ToRegion": "Tyrolia", "FromRegion": "Vienna"}}`
@@ -789,7 +790,8 @@ func (s *MyApplicationSuite) TestRetreatBounceDelete() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(string(report)), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Bohemia", currentState.Units[1].Position)
 	s.Equal("Galicia", currentState.Units[2].Position)
@@ -813,7 +815,8 @@ func (s *MyApplicationSuite) TestRetreatBounceDelete() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(string(report)), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Silesia", currentState.Units[1].Retreating)
 	s.Equal("Ukraine", currentState.Units[2].Retreating)
@@ -834,7 +837,8 @@ func (s *MyApplicationSuite) TestRetreatBounceDelete() {
 
 	var newState GameState
 
-	json.Unmarshal([]byte(string(report)), &newState)
+	err = json.Unmarshal([]byte(string(report)), &newState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	_, ok := newState.Units[1]
 	s.Equal(false, ok)
