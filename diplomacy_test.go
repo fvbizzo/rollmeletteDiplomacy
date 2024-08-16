@@ -73,8 +73,10 @@ func (s *MyApplicationSuite) PassTurn() ([]byte, error) {
 
 func (s *MyApplicationSuite) TestDeleteArmy() {
 
-	s.PassTurn()
-	s.PassTurn()
+	_, err := s.PassTurn()
+	s.Nil(err)
+	_, err = s.PassTurn()
+	s.Nil(err)
 
 	input := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 4}}`
 	s.tester.Advance(England, []byte(input))
@@ -82,7 +84,8 @@ func (s *MyApplicationSuite) TestDeleteArmy() {
 	report, result := s.PassTurn()
 
 	var currentStates GameState
-	json.Unmarshal([]byte(string(report)), &currentStates)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	//check if the unit has been deleted
 	_, ok := currentStates.Units[4]
@@ -98,14 +101,19 @@ func (s *MyApplicationSuite) TestPassMoveTurn() {
 
 func (s *MyApplicationSuite) TestDeleteArmyWhereThereIsNone() {
 
-	s.PassTurn()
-	s.PassTurn()
+	_, err := s.PassTurn()
+	s.Nil(err)
+	_, err = s.PassTurn()
+	s.Nil(err)
 
 	preinput := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 4}}`
 	s.tester.Advance(England, []byte(preinput))
-	s.PassTurn()
-	s.PassTurn()
-	s.PassTurn()
+	_, err = s.PassTurn()
+	s.Nil(err)
+	_, err = s.PassTurn()
+	s.Nil(err)
+	_, err = s.PassTurn()
+	s.Nil(err)
 
 	input := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 4}}`
 	result := s.tester.Advance(England, []byte(input))
@@ -115,15 +123,18 @@ func (s *MyApplicationSuite) TestDeleteArmyWhereThereIsNone() {
 // Testing the build army function
 func (s *MyApplicationSuite) TestBuildArmy() {
 
-	s.PassTurn()
-	s.PassTurn()
+	_, err := s.PassTurn()
+	s.Nil(err)
+	_, err = s.PassTurn()
+	s.Nil(err)
 
 	preinput := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 4}}`
 	s.tester.Advance(England, []byte(preinput))
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	//check if the unit has been deleted
 	_, ok := currentState.Units[4]
@@ -131,8 +142,10 @@ func (s *MyApplicationSuite) TestBuildArmy() {
 	s.Equal(false, ok)
 	s.Nil(result)
 
-	s.PassTurn()
-	s.PassTurn()
+	_, err = s.PassTurn()
+	s.Nil(err)
+	_, err = s.PassTurn()
+	s.Nil(err)
 
 	input := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 0}}`
 	r := s.tester.Advance(England, []byte(input))
@@ -140,7 +153,8 @@ func (s *MyApplicationSuite) TestBuildArmy() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	expect := Unit{
 		ID:       23,
@@ -171,15 +185,20 @@ func (s *MyApplicationSuite) TestBuildArmyOutsideBuildPhase() {
 // Trying to build another player Army
 func (s *MyApplicationSuite) TestBuildanotherPlayerArmy() {
 
-	s.PassTurn()
-	s.PassTurn()
+	_, err := s.PassTurn()
+	s.Nil(err)
+	_, err = s.PassTurn()
+	s.Nil(err)
 
 	preinput := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "England", "Delete": 4}}`
 	s.tester.Advance(England, []byte(preinput))
 
-	s.PassTurn()
-	s.PassTurn()
-	s.PassTurn()
+	_, err = s.PassTurn()
+	s.Nil(err)
+	_, err = s.PassTurn()
+	s.Nil(err)
+	_, err = s.PassTurn()
+	s.Nil(err)
 
 	input := `{"kind": "BuildArmy", "payload" : {"Type": "army", "Position": "London", "Owner": "France", "Delete": 0}}`
 	result := s.tester.Advance(England, []byte(input))
@@ -193,7 +212,8 @@ func (s *MyApplicationSuite) TestMoveArmy() {
 	report, result := s.PassTurn()
 	s.Nil(result)
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Wales", currentState.Units[4].Position)
 }
@@ -209,7 +229,8 @@ func (s *MyApplicationSuite) TestUnitBounce() {
 	s.Nil(r1.Err)
 	s.Nil(r2.Err)
 
-	json.Unmarshal([]byte(r2.Reports[0].Payload), &currentState)
+	err := json.Unmarshal([]byte(r2.Reports[0].Payload), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	//checking if the orders were issued
 	expectedUnitsOrders1 := Orders{
@@ -235,7 +256,8 @@ func (s *MyApplicationSuite) TestUnitBounce() {
 
 	s.Nil(result)
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	//Both units should bounce and be at the place they started
 	s.Equal("London", currentState.Units[4].Position)
@@ -254,7 +276,8 @@ func (s *MyApplicationSuite) TestSupportMove() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Tyrolia", currentState.Units[1].Position)
 	s.Equal("Trieste", currentState.Units[3].Position)
@@ -271,7 +294,8 @@ func (s *MyApplicationSuite) TestSupportMove() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Venice", currentState.Units[1].Position)
 	s.Equal("Tyrolia", currentState.Units[14].Retreating)
@@ -287,7 +311,8 @@ func (s *MyApplicationSuite) TestSupportHoldSuccess() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Tyrolia", currentState.Units[1].Position)
 	s.Nil(result)
@@ -305,7 +330,8 @@ func (s *MyApplicationSuite) TestSupportHoldSuccess() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Tyrolia", currentState.Units[1].Position)
 	s.Equal("Trieste", currentState.Units[3].Position)
@@ -330,7 +356,8 @@ func (s *MyApplicationSuite) TestMoveToPositionWithLeavingUnit() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Budapest", currentState.Units[1].Position)
 	s.Equal("Serbia", currentState.Units[2].Position)
@@ -358,7 +385,8 @@ func (s *MyApplicationSuite) TestMultipleSimultaniousAttacks() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Budapest", currentState.Units[1].Position)
 	s.Equal("Serbia", currentState.Units[2].Position)
@@ -389,7 +417,8 @@ func (s *MyApplicationSuite) TestMultipleSimultaniousAttacks() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Budapest", currentState.Units[1].Position)
 	s.Equal("Serbia", currentState.Units[2].Position)
@@ -414,7 +443,8 @@ func (s *MyApplicationSuite) TestConvoy() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Liverpool", currentState.Units[5].Position)
 	s.Equal("London", currentState.Units[4].Position)
@@ -427,7 +457,8 @@ func (s *MyApplicationSuite) TestConvoy() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Liverpool", currentState.Units[5].Position)
 	s.Equal("North Sea", currentState.Units[4].Position)
@@ -454,12 +485,14 @@ func (s *MyApplicationSuite) TestConvoy() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Yorkshire", currentState.Units[5].Position)
 	s.Nil(result)
 
-	s.PassTurn()
+	_, err = s.PassTurn()
+	s.Nil(err)
 
 	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 4, "OrderType": "convoy", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Yorkshire"}}`
 	input2 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "convoy move", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Yorkshire"}}`
@@ -471,7 +504,8 @@ func (s *MyApplicationSuite) TestConvoy() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Norway", currentState.Units[5].Position)
 	s.Nil(result)
@@ -492,7 +526,8 @@ func (s *MyApplicationSuite) TestConvoyAttacked() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Yorkshire", currentState.Units[5].Position)
 	s.Equal("North Sea", currentState.Units[4].Position)
@@ -512,7 +547,8 @@ func (s *MyApplicationSuite) TestConvoyAttacked() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Yorkshire", currentState.Units[5].Position)
 	s.Equal("North Sea", currentState.Units[4].Position)
@@ -532,7 +568,8 @@ func (s *MyApplicationSuite) TestConvoyDebug() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Yorkshire", currentState.Units[5].Position)
 	s.Equal("North Sea", currentState.Units[4].Position)
@@ -547,7 +584,8 @@ func (s *MyApplicationSuite) TestConvoyDebug() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Norway", currentState.Units[5].Position)
 	s.Nil(result)
@@ -571,7 +609,8 @@ func (s *MyApplicationSuite) TestMovingIntoSubRegions() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Black Sea", currentState.Units[22].Position)
 	s.Nil(result)
@@ -590,7 +629,8 @@ func (s *MyApplicationSuite) TestMovingIntoSubRegions() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Bulgaria", currentState.Units[22].Position)
 	s.Equal("North Coast", currentState.Units[22].SubPosition)
@@ -606,7 +646,8 @@ func (s *MyApplicationSuite) TestEmptyRetreat() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Tyrolia", currentState.Units[1].Position)
 	s.Nil(result)
@@ -621,7 +662,8 @@ func (s *MyApplicationSuite) TestEmptyRetreat() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Venice", currentState.Units[1].Position)
 	s.Equal("Trieste", currentState.Units[3].Position)
@@ -647,7 +689,7 @@ func (s *MyApplicationSuite) TestEmptyRetreat() {
 
 	var newState GameState
 
-	err := json.Unmarshal([]byte(report), &newState)
+	err = json.Unmarshal([]byte(report), &newState)
 	s.Nil(err, "Unmarshal should not error out")
 
 	fmt.Println(newState.Units)
@@ -665,7 +707,8 @@ func (s *MyApplicationSuite) TestDeleteRetreat() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Tyrolia", currentState.Units[1].Position)
 	s.Nil(result)
@@ -680,7 +723,8 @@ func (s *MyApplicationSuite) TestDeleteRetreat() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Venice", currentState.Units[1].Position)
 	s.Equal("Trieste", currentState.Units[3].Position)
@@ -708,7 +752,7 @@ func (s *MyApplicationSuite) TestDeleteRetreat() {
 
 	var newState GameState
 
-	err := json.Unmarshal([]byte(report), &newState)
+	err = json.Unmarshal([]byte(report), &newState)
 	s.Nil(err, "Unmarshal should not error out")
 
 	fmt.Println(newState.Units)
@@ -727,7 +771,8 @@ func (s *MyApplicationSuite) TestMoveRetreat() {
 
 	report, result := s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err := json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Tyrolia", currentState.Units[1].Position)
 	s.Nil(result)
@@ -742,7 +787,8 @@ func (s *MyApplicationSuite) TestMoveRetreat() {
 
 	report, result = s.PassTurn()
 
-	json.Unmarshal([]byte(string(report)), &currentState)
+	err = json.Unmarshal([]byte(report), &currentState)
+	s.Nil(err, "Unmarshal should not error out")
 
 	s.Equal("Venice", currentState.Units[1].Position)
 	s.Equal("Trieste", currentState.Units[3].Position)
@@ -762,7 +808,7 @@ func (s *MyApplicationSuite) TestMoveRetreat() {
 
 	var newState GameState
 
-	err := json.Unmarshal([]byte(report), &newState)
+	err = json.Unmarshal([]byte(report), &newState)
 	s.Nil(err, "Unmarshal should not error out")
 
 	_, ok := newState.Units[14]
