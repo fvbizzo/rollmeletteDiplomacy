@@ -464,7 +464,8 @@ func (s *MyApplicationSuite) TestConvoy() {
 	s.Equal("North Sea", currentState.Units[4].Position)
 	s.Nil(result)
 
-	s.PassTurn()
+	_, err = s.PassTurn()
+	s.Nil(err)
 
 	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "convoy move", "OrderOwner": "England", "ToRegion": "Norway", "FromRegion": "Liverpool"}}`
 	r1 = s.tester.Advance(England, []byte(input1))
@@ -473,7 +474,9 @@ func (s *MyApplicationSuite) TestConvoy() {
 	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "move", "OrderOwner": "England", "ToRegion": "Yorkshire", "FromRegion": "Liverpool"}}`
 	r1 = s.tester.Advance(England, []byte(input1))
 	s.Nil(r1.Err)
-	s.PassTurn()
+
+	_, err = s.PassTurn()
+	s.Nil(err)
 
 	input1 = `{"kind": "MoveArmy", "payload" : {"UnitID": 5, "OrderType": "convoy move", "OrderOwner": "England", "ToRegion": "Sweden", "FromRegion": "Yorkshire"}}`
 	r1 = s.tester.Advance(England, []byte(input1))
