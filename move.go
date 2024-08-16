@@ -236,9 +236,6 @@ func (a *GameApplication) executeMoves(moveOrders []MoveOrder) {
 func ResolveMovementConflicts(gameState *GameState) {
 	destinationMap := make(map[string][]*Unit)
 
-	fmt.Println("Serbia occupied: ", gameState.Board["Serbia"].Occupied)
-	fmt.Println("Budapest occupied: ", gameState.Board["Budapest"].Occupied)
-
 	for _, unit := range gameState.Units {
 		// Skip units with hold orders
 		if unit.CurrentOrder.Ordertype == "hold" {
@@ -246,7 +243,6 @@ func ResolveMovementConflicts(gameState *GameState) {
 		}
 		// Add units to the destination map
 		if unit.CurrentOrder.Ordertype == "move" {
-			fmt.Println("unit move order ", unit.CurrentOrder.ToRegion, unit.ID)
 			destinationMap[unit.CurrentOrder.ToRegion] = append(destinationMap[unit.CurrentOrder.ToRegion], unit)
 		}
 	}

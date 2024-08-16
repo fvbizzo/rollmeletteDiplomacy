@@ -56,19 +56,7 @@ func (a *GameApplication) handleRetreat(
 		ToRegion:    inputPayload.ToRegion,
 		ToSubRegion: inputPayload.ToSubRegion,
 	}
-
-	fmt.Println("ahahahaha")
-	fmt.Println("ahahahaha")
-	fmt.Println("ahahahaha")
-	fmt.Println("ahahahaha")
 	fmt.Println(orders)
-	fmt.Println("ahahahaha")
-	fmt.Println("ahahahaha")
-	fmt.Println("ahahahaha")
-	fmt.Println("ahahahaha")
-	fmt.Println("ahahahaha")
-	fmt.Println("ahahahaha")
-	fmt.Println("ahahahaha")
 
 	a.state.Units[inputPayload.UnitID].CurrentOrder = orders
 
@@ -80,18 +68,7 @@ func (a *GameApplication) handleRetreat(
 func resolveRetreats(a *GameApplication) {
 	// Iterate through the units and handle their retreat orders
 	for _, unit := range a.state.Units {
-		fmt.Println("ahahahaha")
-		fmt.Println("ahahahaha")
-		fmt.Println("ahahahaha")
-		fmt.Println("ahahahaha")
-		fmt.Println(unit.CurrentOrder.Ordertype)
-		fmt.Println("ahahahaha")
-		fmt.Println("ahahahaha")
-		fmt.Println("ahahahaha")
-		fmt.Println("ahahahaha")
-		fmt.Println("ahahahaha")
-		fmt.Println("ahahahaha")
-		fmt.Println("ahahahaha")
+	outerSwitch:
 		switch unit.CurrentOrder.Ordertype {
 		case "hold":
 			// Do nothing for hold orders
@@ -109,16 +86,16 @@ func resolveRetreats(a *GameApplication) {
 			//check for bouncing retreats
 			for _, other := range a.state.Units {
 				//both retreating units tryed to move to the same place and are deleted instead
-				if unit.CurrentOrder.Ordertype == "move" && unit.ID != other.ID {
+				if other.CurrentOrder.Ordertype == "move" && unit.ID != other.ID {
 					delete(a.state.Players[unit.Owner].Armies, unit.ID)
 					delete(a.state.Players[unit.Owner].Armies, other.ID)
 					delete(a.state.Units, unit.ID)
 					delete(a.state.Units, other.ID)
+					break outerSwitch
 				}
 			}
 			// Execute the move order
 			if !a.state.Board[unit.CurrentOrder.ToRegion].Occupied {
-				fmt.Println("Moving unit", unit.ID, "to", unit.CurrentOrder.ToRegion)
 
 				a.state.Board[unit.CurrentOrder.ToRegion].Occupied = true
 
@@ -128,6 +105,7 @@ func resolveRetreats(a *GameApplication) {
 
 				// Update Unit's SubPosition if needed
 				unit.SubPosition = unit.CurrentOrder.ToSubRegion
+
 			} else {
 				fmt.Println("Failed to move unit", unit.ID, "to occupied region", unit.CurrentOrder.ToRegion)
 			}
